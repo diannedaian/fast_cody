@@ -1,11 +1,12 @@
 Metadata-Version: 2.1
 Name: fast-cody
-Version: 0.0.6
+Version: 0.0.8
 Home-page: https://github.com/otmanon/fast-cody/
 Author: Otman Benchekroun
 Author-email: otmanbench@gmail.com
 License: MIT
 Description-Content-Type: text/markdown
+License-File: LICENSE
 Requires-Dist: packaging
 Requires-Dist: numpy
 Requires-Dist: scipy

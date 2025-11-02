@@ -1,3 +1,4 @@
+LICENSE
 README.md
 pyproject.toml
 setup.py
@@ -44,14 +45,9 @@ src/fast_cody.egg-info/not-zip-safe
 src/fast_cody.egg-info/requires.txt
 src/fast_cody.egg-info/top_level.txt
 src/fast_cody/apps/__init__.py
-src/fast_cody/apps/animate_rig.py
-src/fast_cody/apps/cd_demo_pose_tracker.py
 src/fast_cody/apps/interactive_cd_affine_handle.py
 src/fast_cody/apps/interactive_cd_face_tracking.py
 src/fast_cody/apps/interactive_cd_rig_anim.py
-src/fast_cody/apps/test_FAST_IK.py
-src/fast_cody/apps/test_FAST_IK_CD_tex.py
-src/fast_cody/apps/test_FAST_IK_tex.py
 src/fast_cody/data/__init__.py
 src/fast_cody/data/cd_fish.msh
 src/fast_cody/data/cd_fish_rig.json
@@ -68,6 +64,5 @@ src/fast_cody/viewers/ClustersViewer.py
 src/fast_cody/viewers/WeightsViewer.py
 src/fast_cody/viewers/__init__.py
 src/fast_cody/viewers/interactive_handle_subspace_viewer.py
-src/fast_cody/viewers/interactive_handle_viewer.py
 test/test_eigs.py
 test/test_lbs_jacobian.py

@@ -101,7 +101,7 @@ class interactive_handle_subspace_viewer():
         print("  g        Toggle Guizmo Widget Transform")
 
         # TODO q for quit
-        F = igl.boundary_facets(T)
+        F, _, _ = igl.boundary_facets(T)
         vis_texture = False
         if texture_png is not None and texture_obj is not None:
             vis_texture = True
@@ -182,5 +182,3 @@ class interactive_handle_subspace_viewer():
     def update_subspace_coefficients(self, z, p):
         self.viewer.set_bone_transforms(p, z * self.vis_cd, 0);
         self.viewer.updateGL(0)
-
-
