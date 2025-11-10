@@ -46,6 +46,7 @@ src/fast_cody.egg-info/requires.txt
 src/fast_cody.egg-info/top_level.txt
 src/fast_cody/apps/__init__.py
 src/fast_cody/apps/interactive_cd_affine_handle.py
+src/fast_cody/apps/interactive_cd_dual_mode.py
 src/fast_cody/apps/interactive_cd_face_tracking.py
 src/fast_cody/apps/interactive_cd_rig_anim.py
 src/fast_cody/data/__init__.py

@@ -53,6 +53,8 @@ void bind_viewer(py::module& m) {
             })
         .def("set_face_based", &fast_cd_viewer::set_face_based)
         .def("set_color", static_cast<void (fast_cd_viewer::*)(const RowVector3d&, int)>(&fast_cd_viewer::set_color))
+        .def("set_background_color", &fast_cd_viewer::set_background_color)
+        .def("set_lighting_factor", &fast_cd_viewer::set_lighting_factor)
          .def("set_show_lines", &fast_cd_viewer::get_show_lines)
         .def("set_show_lines", &fast_cd_viewer::set_show_lines)
         .def("set_show_faces", &fast_cd_viewer::set_show_faces)
