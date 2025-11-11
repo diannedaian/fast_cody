@@ -1,3 +1,4 @@
+# Build artifacts
 ./build/*
 build/*
 fast_cd_pyb.egg-info/*
@@ -12,12 +13,10 @@ results/*
 **.blend
 **.blend1
 
-
+# Python cache
 **.pyc
-
 src/fast_cody/__pycache__/*
 src/fast_cody/examples/__pycache__/*
-
 src/fast_cody/apps/__pycache__/*
 
 results/**
@@ -25,3 +24,85 @@ results/**
 
 site/*
 site/**
+
+# ============================================
+# API KEYS AND CREDENTIALS
+# ============================================
+# Environment files with API keys
+.env
+.env.local
+.env.*.local
+*.env
+.envrc
+
+# Config files that might contain API keys
+config.ini
+config.local.ini
+secrets.json
+credentials.json
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Common credential storage locations
+.credentials/
+secrets/
+*.secret
+
+# ============================================
+# LARGE MODEL FILES
+# ============================================
+# 3D model formats (can be very large)
+**.msh
+**.obj
+**.glb
+**.gltf
+**.fbx
+**.dae
+**.3ds
+**.ply
+**.stl
+**.blend
+**.blend1
+
+# Generated outputs (often contain large models)
+outputs/**
+!outputs/.gitkeep
+
+# Large data directories (uncomment if you want to ignore data/ models)
+# data/**/*.msh
+# data/**/*.obj
+# data/**/*.glb
+
+# Large texture files (only in outputs, keep data/ textures)
+outputs/**/*.png
+outputs/**/*.jpg
+outputs/**/*.jpeg
+outputs/**/*.tiff
+outputs/**/*.tif
+outputs/**/*.exr
+outputs/**/*.hdr
+# If you want to ignore ALL texture files, uncomment below and comment above:
+# **.png
+# **.jpg
+# **.jpeg
+# **.tiff
+# **.tif
+# **.exr
+# **.hdr
+
+# Archive files
+**.zip
+**.tar
+**.tar.gz
+**.rar
+**.7z
+
+# Large cache and temporary files
+cache/**
+*.cache
+*.tmp
+*.temp
+# Environment variables
+.env

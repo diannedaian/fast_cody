@@ -45,8 +45,15 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #                              read_cache=False, num_modes=16, constraint_enforcement="optimal")
 
 # giant_squid
-name = os.path.join(project_root, "data", "giant_squid", "giant_squid.msh")
-texture_png = os.path.join(project_root, "data", "giant_squid", "giant_squid_tex.png")
-texture_obj = os.path.join(project_root, "data", "giant_squid", "giant_squid_tex.obj")
+# name = os.path.join(project_root, "data", "giant_squid", "giant_squid.msh")
+# texture_png = os.path.join(project_root, "data", "giant_squid", "giant_squid_tex.png")
+# texture_obj = os.path.join(project_root, "data", "giant_squid", "giant_squid_tex.obj")
+# interactive_cd_affine_handle(name, texture_png=texture_png, texture_obj=texture_obj,
+#                              read_cache=False, num_modes=16, constraint_enforcement="optimal")
+
+# Test generated model from pipeline
+name = os.path.join(project_root, "outputs", "converted", "model", "model.msh")
+texture_png = os.path.join(project_root, "outputs", "converted", "model", "texture.png")
+texture_obj = os.path.join(project_root, "outputs", "converted", "model", "model.obj")
 interactive_cd_affine_handle(name, texture_png=texture_png, texture_obj=texture_obj,
                              read_cache=False, num_modes=16, constraint_enforcement="optimal")

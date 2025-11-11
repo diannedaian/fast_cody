@@ -4,3 +4,4 @@ cvxopt
 polyscope
 scikit-learn
 libigl
+python-dotenv
