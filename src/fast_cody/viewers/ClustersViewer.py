@@ -1,12 +1,13 @@
 import os
 
 import numpy as np
-import polyscope as ps
+# polyscope disabled because it conflicts with fast_cd_pyb GLFW on macOS
+# import polyscope as ps
 
 import time
 
-
-import polyscope.imgui as psim
+# polyscope disabled because it conflicts with fast_cd_pyb GLFW on macOS
+# import polyscope.imgui as psim
 class ClustersViewer():
     """
     This class is used to visualize the clusters of a mesh using polyscope.
@@ -49,14 +50,18 @@ class ClustersViewer():
               path="",
               R=np.identity(3), period=1/60,
                  vminmax=None, alpha=1, grouped=True):
+        print("WARNING: ClustersViewer is disabled - polyscope conflicts with fast_cd_pyb GLFW on macOS")
+        print("         This viewer would visualize clusters using polyscope, but is currently disabled.")
+
         write_png = False
         if (path != ""):
             write_png = True
             os.makedirs(path, exist_ok=True)
 
         nc = np.max(l)+1
-        ps.init()
-        ps.look_at(eye_pos, eye_target)
+        # polyscope disabled because it conflicts with fast_cd_pyb GLFW on macOS
+        # ps.init()
+        # ps.look_at(eye_pos, eye_target)
 
         self.grouped = grouped
         self.V = V
@@ -64,7 +69,8 @@ class ClustersViewer():
         self.path = path
         self.R = R
         self.l = l
-        self.create_mesh(V@ R.T, T, l)
+        self.mesh = None  # Placeholder
+        # self.create_mesh(V@ R.T, T, l)
         self.i = 0
         self.write_png = write_png
         self.period = period
@@ -75,58 +81,64 @@ class ClustersViewer():
         arr = np.arange(0, nc)
         np.random.shuffle(arr)
         self.arr = arr
-        ps.set_user_callback(self.anim)
-        ps.show()
-        self.mesh.remove()
+        # ps.set_user_callback(self.anim)
+        # ps.show()
+        # self.mesh.remove()
 
 
     def anim(self):
-        if not (self.grouped):
-            if (self.i < self.max_frame):
-                mesh = self.mesh
-                i = self.i
-                ind = self.l == self.arr[i]
-                self.create_mesh(self.V @ self.R.T, self.T[ind, :], self.l[ind])
-                # ps.set_camera_rotation(self.R)
-                if (self.write_png):
-                    ps.screenshot(self.path + "/" + str(i).zfill(4) + ".png", False)
-                self.i += 1
-                time.sleep(self.period)
-            else:
-                changed, ID = psim.SliderInt("cluster label", self.id, v_min=0, v_max=self.nc)
-                if changed:
-                    self.id = ID
-                    ind = self.l == ID
-                    self.create_mesh(self.V @ self.R.T, self.T[ind, :], self.l[ind])
-        else:
-            if (self.i < self.max_frame):
-                mesh = self.mesh
-                i = self.i
-                ind= np.zeros(self.T.shape[0], dtype=bool)
-                for j in range(0, i+1):
-                    ind = np.logical_or(ind,  (self.l == self.arr[j]))
-
-                self.create_mesh(self.V @ self.R.T,  self.T[ind, :], self.l[ind])
-
-                # ps.set_camera_rotation(self.R)
-                if (self.write_png):
-                    ps.screenshot(self.path + "/" + str(i).zfill(4) + ".png", False)
-                self.i += 1
-                time.sleep(self.period)
-            else:
-                self.create_mesh(self.V @ self.R.T, self.T, self.l)
-
+        # polyscope disabled because it conflicts with fast_cd_pyb GLFW on macOS
+        print("WARNING: ClustersViewer.anim() called but polyscope is disabled")
         return
+        # if not (self.grouped):
+        #     if (self.i < self.max_frame):
+        #         mesh = self.mesh
+        #         i = self.i
+        #         ind = self.l == self.arr[i]
+        #         self.create_mesh(self.V @ self.R.T, self.T[ind, :], self.l[ind])
+        #         # ps.set_camera_rotation(self.R)
+        #         if (self.write_png):
+        #             ps.screenshot(self.path + "/" + str(i).zfill(4) + ".png", False)
+        #         self.i += 1
+        #         time.sleep(self.period)
+        #     else:
+        #         changed, ID = psim.SliderInt("cluster label", self.id, v_min=0, v_max=self.nc)
+        #         if changed:
+        #             self.id = ID
+        #             ind = self.l == ID
+        #             self.create_mesh(self.V @ self.R.T, self.T[ind, :], self.l[ind])
+        # else:
+        #     if (self.i < self.max_frame):
+        #         mesh = self.mesh
+        #         i = self.i
+        #         ind= np.zeros(self.T.shape[0], dtype=bool)
+        #         for j in range(0, i+1):
+        #             ind = np.logical_or(ind,  (self.l == self.arr[j]))
+
+        #         self.create_mesh(self.V @ self.R.T,  self.T[ind, :], self.l[ind])
+
+        #         # ps.set_camera_rotation(self.R)
+        #         if (self.write_png):
+        #             ps.screenshot(self.path + "/" + str(i).zfill(4) + ".png", False)
+        #         self.i += 1
+        #         time.sleep(self.period)
+        #     else:
+        #         self.create_mesh(self.V @ self.R.T, self.T, self.l)
+
+        # return
 
 
 
     def create_mesh(self, X, T, l):
-        nc = np.max(l)
+        # polyscope disabled because it conflicts with fast_cd_pyb GLFW on macOS
+        print("WARNING: ClustersViewer.create_mesh() called but polyscope is disabled")
+        self.mesh = None  # Placeholder
+        # nc = np.max(l)
 
-        if T.shape[1] == 4:
-            self.mesh = ps.register_volume_mesh("mesh", X , T)
-            self.mesh.add_scalar_quantity("clusters", l, defined_on='cells', cmap='rainbow', enabled=True, vminmax=[0, nc])
-        elif T.shape[1] == 2:
-            self.mesh = ps.register_curve_network("mesh", X, T)
-            self.mesh.add_scalar_quantity("clusters", l, defined_on='edges', cmap='rainbow', enabled=True,
-                                          vminmax=[0, nc])
+        # if T.shape[1] == 4:
+        #     self.mesh = ps.register_volume_mesh("mesh", X , T)
+        #     self.mesh.add_scalar_quantity("clusters", l, defined_on='cells', cmap='rainbow', enabled=True, vminmax=[0, nc])
+        # elif T.shape[1] == 2:
+        #     self.mesh = ps.register_curve_network("mesh", X, T)
+        #     self.mesh.add_scalar_quantity("clusters", l, defined_on='edges', cmap='rainbow', enabled=True,
+        #                                   vminmax=[0, nc])

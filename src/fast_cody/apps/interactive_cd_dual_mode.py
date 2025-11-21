@@ -114,12 +114,12 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
     # 'keyboard' = WASD keyboard control
     # 'mouse' = mouse drag with guizmo (affine handle)
     control_mode = 'mouse'
-    
+
     # Camera mode: camera perspective
     # 'first_person' = camera follows behind fish (close, above head)
     # 'third_person' = camera tracks fish from further away (better overview)
     camera_mode = 'third_person'
-    
+
     # Key state tracking for keyboard control mode
     # We'll use a set to track which keys are currently active
     # Keys are added on press and should be removed on release, but since we don't have
@@ -127,9 +127,9 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
     active_keys = set()
     key_last_pressed = {}  # Track when keys were last pressed
     key_timeout = 2.0  # Consider key inactive after this many seconds without re-press (longer for smoother controls)
-    
+
     last_update_time = time.time()
-    
+
     # Acceleration-based movement system for smooth motion
     current_velocity = np.array([0.0, 0.0, 0.0])  # Current velocity vector (forward/back, left/right, up/down)
     acceleration_rate = 5.0  # How fast velocity increases (units per second^2)
@@ -140,7 +140,148 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
     vertex_shader_path = fc.get_shader("./vertex_shader_16.glsl")
     fragment_shader_path = fc.get_shader("./fragment_shader.glsl")
     viewer_base = fcd.fast_cd_viewer_custom_shader(vertex_shader_path, fragment_shader_path, 16, 16)
-    
+
+    # === LOAD UNDERWATER FLOOR MESH ==================================
+    # NOTE: The floor is a STATIC mesh - it does NOT use fast_cody's secondary motion.
+    # It will not be affected by the simulation (no weights, no bone transforms).
+    # Only mesh ID 0 (the fish) gets updated in the pre_draw_callback.
+
+    # Path to the OBJ floor model (PLACE YOUR PATH HERE)
+    floor_path = "data/sea_floor.obj"
+    floor_id = None  # Will be set if floor loads successfully
+
+    # Check if floor file exists and warn if too large
+    if os.path.exists(floor_path):
+        file_size_mb = os.path.getsize(floor_path) / (1024 * 1024)  # Size in MB
+        max_size_mb = 100  # Maximum recommended size (100 MB)
+
+        if file_size_mb > max_size_mb:
+            print(f"WARNING: Floor OBJ file is very large ({file_size_mb:.1f} MB).")
+            print(f"         This may cause slow loading or memory issues.")
+            print(f"         Consider simplifying the mesh or using a smaller model.")
+            print(f"         Skipping floor mesh loading to prevent crashes.")
+            print(f"         To load anyway, increase max_size_mb or simplify the mesh.")
+        else:
+            try:
+                print(f"Loading static floor mesh from {floor_path} ({file_size_mb:.1f} MB)...")
+                # Read mesh
+                V_floor, F_floor = igl.read_triangle_mesh(floor_path)
+                print(f"  Loaded {V_floor.shape[0]} vertices, {F_floor.shape[0]} faces")
+
+                # Add floor mesh to viewer (static - no weights needed)
+                floor_id = viewer_base.add_mesh(V_floor, F_floor)
+                print(f"  Floor mesh ID: {floor_id}")
+                print(f"[DEBUG] Floor mesh added: floor_id = {floor_id}")
+
+                # Optional: set floor to be double-sided
+                viewer_base.set_face_based(True, floor_id)
+
+                # Optional: scale or move floor if necessary
+                # (Adjust these values depending on your scene)
+                V_floor_scaled = V_floor.copy()
+                V_floor_scaled *= 3.0      # scale up to make it more visible
+                # Move the floor BELOW the fish so it is visible
+                V_floor_scaled[:,1] -= 3.0
+                viewer_base.set_vertices(floor_id, V_floor_scaled)
+                print(f"  Floor positioned below fish (scale: 3.0, Y offset: -3.0)")
+                print(f"[DEBUG] Floor mesh geometry: V={V_floor_scaled.shape}, F={F_floor.shape}")
+
+                # Set a visible color for the floor (sand/beige color to make it stand out)
+                floor_color = np.array([200, 180, 150]) / 255.0  # Sand/beige color
+                viewer_base.set_color(floor_color, floor_id)
+                print(f"  Set floor color to sand/beige for visibility")
+
+                # The custom shader expects EXACTLY 16 primary + 16 secondary weights per vertex.
+                # The floor must provide full-size weight arrays even if all zeros.
+                num_bones = 16
+                num_modes_floor = 16  # secondary modes
+                num_verts = V_floor_scaled.shape[0]
+
+                Wp_floor = np.zeros((num_verts, num_bones), dtype=np.float64)
+                Ws_floor = np.zeros((num_verts, num_modes_floor), dtype=np.float64)
+
+                viewer_base.set_weights(Wp_floor, Ws_floor, floor_id)
+                print(f"  Set zero weights for static floor (16 bones, 16 modes)")
+
+                # Initialize identity bone transforms for the floor (required by shader)
+                # Even though the floor is static, the shader expects bone transform data to be initialized
+                # Need transforms for all 16 primary bones (16 * 12 = 192 params)
+                p0_floor = np.zeros((num_bones * 12, 1), dtype=np.float64)  # 16 bones * 12 params each
+                # Set identity matrices for all bones: [1 0 0 0; 0 1 0 0; 0 0 1 0] for each bone
+                for bone_idx in range(num_bones):
+                    base_idx = bone_idx * 12
+                    p0_floor[base_idx + 0] = 1.0   # Identity matrix diagonal
+                    p0_floor[base_idx + 5] = 1.0
+                    p0_floor[base_idx + 10] = 1.0
+                z0_floor = np.zeros((num_modes_floor * 12, 1), dtype=np.float64)  # Zero secondary transforms
+                try:
+                    viewer_base.set_bone_transforms(p0_floor, z0_floor, floor_id)
+                    print(f"  Initialized identity bone transforms for static floor ({num_bones} bones)")
+                except Exception as e:
+                    print(f"  Warning: Could not initialize bone transforms for floor: {e}")
+
+                # NOTE: The floor is static - weights are all zeros and bone transforms are identity.
+                # The pre_draw_callback only updates mesh 0 (the fish), so the floor
+                # will remain completely static and unaffected by the simulation.
+
+                # Load texture if the OBJ has an accompanying texture file
+                # Check for sandtexture.jpg first, then fall back to same-name textures
+                texture_candidate = None
+                # First, try the specific sandtexture.jpg file
+                sand_tex_path = "data/sandtexture.jpg"
+                if os.path.exists(sand_tex_path):
+                    texture_candidate = sand_tex_path
+                    print(f"  Found sand texture: {sand_tex_path}")
+                else:
+                    # Fall back to textures with same name as OBJ
+                    for ext in ["png", "jpg", "jpeg"]:
+                        tex_path = floor_path.replace(".obj", f".{ext}")
+                        if os.path.exists(tex_path):
+                            texture_candidate = tex_path
+                            break
+
+                if texture_candidate is not None:
+                    # You must provide UVs and face-UVs (TC, FTC)
+                    # If your OBJ already has UVs, load them:
+                    try:
+                        obj_data = igl.readOBJ(floor_path)
+                        if len(obj_data) > 3 and obj_data[3].shape[0] != 0:
+                            _, _, _, TC, _, FTC = obj_data
+                            viewer_base.set_texture(texture_candidate, TC, FTC, floor_id)
+                            print(f"  Applied texture: {texture_candidate}")
+                        else:
+                            print("  Floor OBJ has no UVs: cannot apply texture.")
+                    except Exception as e:
+                        print(f"  Warning: Could not load UVs for texture: {e}")
+                else:
+                    print("  No texture found next to OBJ, skipping texture setup.")
+
+                print("  Floor mesh loaded successfully!")
+            except Exception as e:
+                print(f"ERROR: Failed to load floor mesh: {e}")
+                print("       Continuing without floor mesh...")
+    else:
+        print(f"Floor OBJ file not found: {floor_path}")
+        print("Skipping floor mesh loading...")
+
+    # ==================================================================
+
+    # Load caustics atlas texture (with error handling)
+    # TEMPORARILY DISABLED until method is available in compiled extension
+    # try:
+    #     atlas_path = fc.get_data("./caustics_atlas.png")
+    #     if hasattr(viewer_base, 'set_caustics_atlas'):
+    #         viewer_base.set_caustics_atlas(atlas_path)
+    #         if hasattr(viewer_base, 'set_uniform'):
+    #             viewer_base.set_uniform("u_numFrames", 16)    # Number of frames in atlas
+    #             viewer_base.set_uniform("u_frameRate", 12.0)  # Animation frame rate
+    #     else:
+    #         print("WARNING: set_caustics_atlas method not available. Caustics will not be loaded.")
+    # except Exception as e:
+    #     print(f"WARNING: Failed to load caustics atlas: {e}")
+    #     print("         Continuing without caustics effect...")
+    print("NOTE: Caustics atlas loading temporarily disabled - will be enabled after rebuild")
+
     # Set water-like background color (ocean blue/cyan)
     if background_color is None:
         # Default water color: deep ocean blue
@@ -148,12 +289,12 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
     else:
         background_color = np.array(background_color)
     viewer_base.set_background_color(background_color)
-    
+
     # Adjust lighting for underwater effect (slightly dimmer, more diffuse)
     if lighting_factor is None:
         lighting_factor = 0.7  # Slightly reduced lighting for underwater feel
     viewer_base.set_lighting_factor(lighting_factor)
-    
+
     print("=" * 60)
     print("DUAL MODE CONTROLS:")
     print("  CONTROL MODE (how to move the fish):")
@@ -215,28 +356,28 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
 
     # Initialize guizmo
     transform_mode = "translate"
-    
+
     def guizmo_callback_wrapper(A):
         nonlocal T0
         T0 = A
-    
+
     # Initialize guizmo - visible by default since we start in mouse control mode
     viewer_base.init_guizmo(True, T0, guizmo_callback_wrapper, transform_mode)
-    
+
     vis_cd = True
     guizmo_visible = True  # Initially visible since control_mode starts as 'mouse'
 
     def key_callback(key, modifier):
         nonlocal control_mode, camera_mode, transform_mode, guizmo_visible, vis_cd, active_keys, key_last_pressed
         nonlocal current_velocity, T0
-        
+
         current_time = time.time()
-        
+
         # Control mode toggle (K key) - Keyboard vs Mouse
         if key == ord('k') or key == ord('K'):
             control_mode = 'keyboard' if control_mode == 'mouse' else 'mouse'
             active_keys.clear()  # Clear active keys when switching control modes
-            
+
             if control_mode == 'keyboard':
                 # Switching to keyboard control: hide guizmo, reset velocity
                 if hasattr(viewer_base, 'guizmo'):
@@ -251,21 +392,21 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
                     viewer_base.guizmo.T = T0.copy()
                 # Reset velocity
                 current_velocity = np.array([0.0, 0.0, 0.0])
-            
+
             print(f"Control mode: {control_mode}")
             return True
-        
+
         # Camera mode toggle (V key) - First-Person vs Third-Person camera
         if key == ord('v') or key == ord('V'):
             camera_mode = 'first_person' if camera_mode == 'third_person' else 'third_person'
             print(f"Camera mode: {camera_mode}")
             return True
-        
+
         # Toggle secondary motion (C key)
         if key == ord('c') or key == ord('C'):
             vis_cd = not vis_cd
             return True
-        
+
         # Guizmo transform toggle (G key) - only in mouse control mode
         if (key == ord('g') or key == ord('G')) and control_mode == 'mouse':
             if transform_mode == "translate":
@@ -276,7 +417,7 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
                 transform_mode = "translate"
             viewer_base.change_guizmo_op(transform_mode)
             return True
-        
+
         # Keyboard controls - track WASD keys (works in keyboard control mode)
         if control_mode == 'keyboard':
             key_char = chr(key).lower() if key < 256 else ''
@@ -284,16 +425,16 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
                 active_keys.add(key_char)
                 key_last_pressed[key_char] = current_time
                 return True
-        
+
         return False
 
     def update_keyboard_controls(dt):
         """Update fish transform based on WASD input with acceleration-based movement"""
         nonlocal T0, active_keys, key_last_pressed, key_timeout
         nonlocal current_velocity, control_mode
-        
+
         current_time = time.time()
-        
+
         # Remove keys that haven't been pressed recently (timeout-based key release detection)
         keys_to_remove = []
         for key in active_keys:
@@ -302,16 +443,16 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
                     keys_to_remove.append(key)
         for key in keys_to_remove:
             active_keys.discard(key)
-        
+
         # Get current transform to extract orientation
         current_pos = T0[0:3, 3].copy()
         R = T0[0:3, 0:3].copy()  # Current rotation matrix
-        
+
         # Calculate movement directions from current orientation
         # Forward is Z-axis column, Right is X-axis column, Up is Y-axis column
         forward_dir = R[:, 2].copy()  # Forward (Z-axis)
         right_dir = R[:, 0].copy()    # Right (X-axis)
-        
+
         # Normalize directions (should already be normalized, but be safe)
         forward_dir_norm = np.linalg.norm(forward_dir)
         right_dir_norm = np.linalg.norm(right_dir)
@@ -323,11 +464,11 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
             right_dir = right_dir / right_dir_norm
         else:
             right_dir = np.array([1, 0, 0])
-        
+
         # Calculate desired acceleration based on active keys
         desired_forward_accel = 0.0
         desired_right_accel = 0.0
-        
+
         if 'w' in active_keys:
             desired_forward_accel += acceleration_rate
         if 's' in active_keys:
@@ -336,18 +477,18 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
             desired_right_accel -= acceleration_rate  # Left is negative right
         if 'd' in active_keys:
             desired_right_accel += acceleration_rate  # Right is positive right
-        
+
         # Update velocity with acceleration and damping
         velocity_change = np.array([0.0, 0.0, 0.0])
         if abs(desired_forward_accel) > 0.01:
             velocity_change += forward_dir * desired_forward_accel * dt
         if abs(desired_right_accel) > 0.01:
             velocity_change += right_dir * desired_right_accel * dt
-        
+
         if np.linalg.norm(velocity_change) > 1e-6:
             # Accelerate in desired direction
             current_velocity += velocity_change
-            
+
             # Clamp velocity magnitude
             velocity_magnitude = np.linalg.norm(current_velocity)
             if velocity_magnitude > max_velocity:
@@ -357,15 +498,15 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
             current_velocity *= damping_factor
             if np.linalg.norm(current_velocity) < 0.001:
                 current_velocity = np.array([0.0, 0.0, 0.0])
-        
+
         # Update position based on velocity (rotation stays the same)
         new_pos = current_pos + current_velocity * dt
-        
+
         # Create new transform with same rotation, updated position
         T0_new = T0.copy()
         T0_new[0:3, 3] = new_pos
         T0 = T0_new.astype(dtype=np.float32, order="F")
-        
+
         # Update guizmo transform to match T0 when in keyboard mode (keeps it in sync, even if hidden)
         # This way when switching back to mouse mode, guizmo will be at the right position
         # Also ensure it stays hidden in keyboard mode
@@ -377,16 +518,16 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
         """Update camera to follow above and behind fish (fake first-person / third-person view)"""
         # Get fish position and orientation from T0
         fish_pos = T0[0:3, 3]
-        
+
         # Extract rotation matrix to get actual forward and up directions
         # This ensures we use the same coordinate system as the transform
         R = T0[0:3, 0:3]
-        
+
         # Get forward direction from rotation matrix (Z-axis column)
         # This should match the forward direction used in movement
         fish_forward = R[:, 2].copy()
         fish_up = R[:, 1].copy()  # Y-axis is up
-        
+
         # Normalize (should already be normalized, but be safe)
         fish_forward_norm = np.linalg.norm(fish_forward)
         fish_up_norm = np.linalg.norm(fish_up)
@@ -394,55 +535,55 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
             fish_forward = fish_forward / fish_forward_norm
         if fish_up_norm > 1e-6:
             fish_up = fish_up / fish_up_norm
-        
+
         # Position camera above and behind the fish (like a third-person camera)
         # Camera is positioned: behind the fish, above its head
-        height_offset = 1.5  # Height above fish (above its head)  
+        height_offset = 1.5  # Height above fish (above its head)
         behind_distance = camera_distance  # Distance behind fish
-        
+
         # Calculate camera position: behind fish, above fish's head
         # Behind: move opposite to forward direction
         camera_offset_back = -fish_forward * behind_distance
         # Above: move up along the up vector from the transform
         camera_offset_up = fish_up * height_offset
         camera_eye = fish_pos + camera_offset_back + camera_offset_up
-        
+
         # Look at a point ahead of the fish (in the direction it's facing)
         # Look slightly ahead so we can see where the fish is going
         look_at_distance = 1.2  # How far ahead to look
         look_at_point = fish_pos + fish_forward * look_at_distance
-        
+
         # Ensure coordinates are valid (not NaN or Inf)
         if np.any(np.isnan(camera_eye)) or np.any(np.isinf(camera_eye)):
             return
         if np.any(np.isnan(look_at_point)) or np.any(np.isinf(look_at_point)):
             return
-        
+
         # Convert to row vectors (as expected by the viewer API - RowVector3d)
         # The API expects RowVector3d which is a 1x3 array
         camera_eye_row = camera_eye.reshape(1, 3) if camera_eye.ndim == 1 else camera_eye
         look_at_point_row = look_at_point.reshape(1, 3) if look_at_point.ndim == 1 else look_at_point
-        
+
         # Ensure they're the right shape (1, 3)
         if camera_eye_row.shape != (1, 3):
             camera_eye_row = camera_eye_row.reshape(1, -1)[:, :3]
         if look_at_point_row.shape != (1, 3):
             look_at_point_row = look_at_point_row.reshape(1, -1)[:, :3]
-        
+
         # Set camera
         viewer_base.set_camera_eye(camera_eye_row)
         viewer_base.set_camera_center(look_at_point_row)
-    
+
     def update_third_person_camera():
         """Update camera to track fish in third-person mode"""
         # Get fish position and orientation from T0
         fish_pos = T0[0:3, 3]
-        
+
         # Extract rotation matrix
         R = T0[0:3, 0:3]
         fish_forward = R[:, 2].copy()
         fish_up = R[:, 1].copy()
-        
+
         # Normalize
         fish_forward_norm = np.linalg.norm(fish_forward)
         fish_up_norm = np.linalg.norm(fish_up)
@@ -450,49 +591,49 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
             fish_forward = fish_forward / fish_forward_norm
         if fish_up_norm > 1e-6:
             fish_up = fish_up / fish_up_norm
-        
+
         # Position camera above and behind fish, but much further back for third-person view
         height_offset = 3.0  # Higher up for third-person
         behind_distance = camera_distance * 2.5  # Much further back to see rotation clearly
-        
+
         # Calculate camera position
         camera_offset_back = -fish_forward * behind_distance
         camera_offset_up = fish_up * height_offset
         camera_eye = fish_pos + camera_offset_back + camera_offset_up
-        
+
         # Look at the fish (or slightly ahead)
         look_at_point = fish_pos + fish_forward * 0.3
-        
+
         # Ensure coordinates are valid
         if np.any(np.isnan(camera_eye)) or np.any(np.isinf(camera_eye)):
             return
         if np.any(np.isnan(look_at_point)) or np.any(np.isinf(look_at_point)):
             return
-        
+
         # Convert to row vectors
         camera_eye_row = camera_eye.reshape(1, 3) if camera_eye.ndim == 1 else camera_eye
         look_at_point_row = look_at_point.reshape(1, 3) if look_at_point.ndim == 1 else look_at_point
-        
+
         if camera_eye_row.shape != (1, 3):
             camera_eye_row = camera_eye_row.reshape(1, -1)[:, :3]
         if look_at_point_row.shape != (1, 3):
             look_at_point_row = look_at_point_row.reshape(1, -1)[:, :3]
-        
+
         # Set camera
         viewer_base.set_camera_eye(camera_eye_row)
         viewer_base.set_camera_center(look_at_point_row)
 
     step = 0
     def pre_draw_callback():
-        nonlocal J, B, T0, sim, st, step, last_update_time
-        
+        nonlocal J, B, T0, sim, st, step, last_update_time, floor_id
+
         current_time = time.time()
         dt = current_time - last_update_time
         if dt <= 0:
             dt = 0.016  # Prevent division by zero or negative dt
         last_update_time = current_time
         dt = min(dt, 0.1)  # Cap dt to prevent large jumps
-        
+
         # Update controls based on control mode
         if control_mode == 'keyboard':
             # Keyboard control: update fish transform based on WASD input
@@ -504,27 +645,30 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
             # Mouse control: update T0 from guizmo (user is controlling via guizmo)
             if hasattr(viewer_base, 'guizmo') and viewer_base.guizmo.visible:
                 T0 = viewer_base.guizmo.T.copy()
-        
+
         # Update camera based on camera mode (independent of control mode)
         if camera_mode == 'first_person':
             update_first_person_camera()
         else:
             update_third_person_camera()
-        
+
         # Update simulation
         p = T0[0:3, :].reshape((12, 1))
         z = sim.step(p, st)
         st.update(z, p)
-        
-        # Update viewer
+
+        # Update viewer - fish mesh (ID 0) with bone transforms
         viewer_base.set_bone_transforms(p, z * (1.0 if vis_cd else 0.0), 0)
         viewer_base.updateGL(0)
+
+        # NOTE: Floor mesh is static and does NOT receive updateGL() or set_bone_transforms()
+        # The floor remains unchanged throughout the simulation
+
         step += 1
 
     # Set callbacks
     viewer_base.set_pre_draw_callback(pre_draw_callback)
     viewer_base.set_key_callback(key_callback)
-    
+
     # Launch viewer
     viewer_base.launch(60, True)
-
