@@ -41,8 +41,24 @@ class CMakeBuild(build_ext):
 
     def build_extension(self, ext):
         extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
-        cmake_args = ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
-                      '-DPYTHON_EXECUTABLE=' + sys.executable]
+        cmake_args = [
+            f"-DPYTHON_EXECUTABLE={sys.executable}",
+            "-DCMAKE_BUILD_TYPE=Release",
+            '-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
+            '-DCMAKE_POLICY_VERSION_MINIMUM=3.5'
+        ]
+
+        # Set architecture based on current platform
+        if platform.system() == "Darwin":
+            # Detect architecture: arm64 for Apple Silicon, x86_64 for Intel Macs
+            arch = platform.machine()
+            if arch == "arm64":
+                cmake_args.append("-DCMAKE_OSX_ARCHITECTURES=arm64")
+            elif arch == "x86_64":
+                cmake_args.append("-DCMAKE_OSX_ARCHITECTURES=x86_64")
+            else:
+                # Default to native architecture if unknown
+                cmake_args.append(f"-DCMAKE_OSX_ARCHITECTURES={arch}")
 
         # This is horrible, I don't know other way of installing dependencies on the wheel dependencies
         # os.system("python -m pip install numpy")
@@ -67,13 +83,20 @@ class CMakeBuild(build_ext):
                     cmake_args += ['-A', 'Win32']
                 build_args += ['--', '/m']
         else:
-            cmake_args += ['-DCMAKE_BUILD_TYPE=' + cfg]
-            build_args += ['--', '-j2']
+            build_args += ['--', '-j4']
 
         if self.distribution.verbose > 0:
             cmake_args += ['-DCMAKE_VERBOSE_MAKEFILE:BOOL=ON']
 
         env = os.environ.copy()
+        # On macOS, ensure we use native Apple clang compilers for ARM64 builds
+        # This prevents using Homebrew LLVM or x86_64 compilers that would build for wrong architecture
+        if platform.system() == "Darwin":
+            # Only override if not already set (allows user override if needed)
+            if 'CC' not in env or not env['CC']:
+                env['CC'] = '/usr/bin/clang'
+            if 'CXX' not in env or not env['CXX']:
+                env['CXX'] = '/usr/bin/clang++'
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''), self.distribution.get_version())
         if not os.path.exists(self.build_temp):
             os.makedirs(self.build_temp)

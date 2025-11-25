@@ -3,6 +3,29 @@ project(fast_cd_pyb
   DESCRIPTION
   "Fast CD Python Bindings"
 )
+
+# Set architecture based on current platform
+# This allows the extension to be built for the native architecture (arm64 for Apple Silicon, x86_64 for Intel Macs)
+if(APPLE)
+    # Only set if not already specified (allows override from setup.py)
+    if(NOT CMAKE_OSX_ARCHITECTURES)
+        # Detect architecture from CMAKE_SYSTEM_PROCESSOR or default to native
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+            set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "" FORCE)
+        elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64")
+            set(CMAKE_OSX_ARCHITECTURES "x86_64" CACHE STRING "" FORCE)
+        else()
+            # Default to native architecture if unknown
+            execute_process(
+                COMMAND uname -m
+                OUTPUT_VARIABLE ARCH
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            set(CMAKE_OSX_ARCHITECTURES "${ARCH}" CACHE STRING "" FORCE)
+        endif()
+    endif()
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_BUILD_TYPE "Release")

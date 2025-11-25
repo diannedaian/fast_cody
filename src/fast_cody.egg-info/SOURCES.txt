@@ -50,10 +50,13 @@ src/fast_cody/apps/hunyuan.py
 src/fast_cody/apps/interactive_cd_affine_handle.py
 src/fast_cody/apps/interactive_cd_dual_mode.py
 src/fast_cody/apps/interactive_cd_face_tracking.py
+src/fast_cody/apps/interactive_cd_keyboard_handle.py
 src/fast_cody/apps/interactive_cd_multi_fish.py
 src/fast_cody/apps/interactive_cd_rig_anim.py
 src/fast_cody/apps/pipeline.py
 src/fast_cody/data/__init__.py
+src/fast_cody/data/build_caustics_atlas.py
+src/fast_cody/data/caustics_atlas.png
 src/fast_cody/data/cd_fish.msh
 src/fast_cody/data/cd_fish_rig.json
 src/fast_cody/data/cd_fish_rig_anim__swim.json

@@ -9,6 +9,7 @@
  in vec3 normal;
  out vec3 position_eye;
  out vec3 normal_eye;
+ out vec3 v_worldPos;
  in vec4 Ka;
  in vec4 Kd;
  in vec4 Ks;
@@ -54,6 +55,9 @@
 
 
      vec3 p =  P * x;
+
+     // Output world position (before view transform)
+     v_worldPos = p;
 
      vec3 n = P* vec4(normal, 0.0);
      //vec3 p = primary_bones[0][3] + position;
