@@ -14,6 +14,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
+from datetime import datetime
 
 
 def find_tetwild() -> Optional[str]:
@@ -245,8 +246,10 @@ def convert_to_msh(
     print(f"[CONVERT] Output: {msh_path}")
 
     try:
-        # Run fTetWild with the same command format as user's example
-        # Format: ./build/FloatTetwild_bin -i input.obj -o output.msh
+        # Run fTetWild with tolerance parameters to handle problematic meshes
+        # -e/--epsr: epsilon (mesh tolerance), default 1e-3, using 5e-3 for more relaxed tolerance
+        # -l/--lr: ideal edge length ratio, default 0.05
+        # Format: ./build/FloatTetwild_bin -i input.obj -o output.msh -e 5e-3
         with open(log_path, "w") as log_file:
             result = subprocess.run(
                 [
@@ -255,6 +258,8 @@ def convert_to_msh(
                     str(obj_path),
                     "-o",
                     str(msh_path),
+                    "-e", "5e-3",  # More relaxed epsilon (5x default) to handle mesh quality issues
+                    "-l", "0.05",   # Default ideal edge length
                 ],
                 capture_output=True,
                 text=True,
@@ -306,10 +311,10 @@ def convert_glb_to_msh(
     if not glb_path.exists():
         raise FileNotFoundError(f"GLB file not found: {glb_path}")
 
-    # Create output directory based on GLB basename
-    glb_stem = glb_path.stem
+    # Create output directory with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_root = Path(out_dir).resolve()
-    job_dir = out_root / glb_stem
+    job_dir = out_root / timestamp
     job_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[CONVERT] Input GLB: {glb_path}")

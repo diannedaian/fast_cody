@@ -12,6 +12,7 @@ import json
 import sys
 from pathlib import Path
 from typing import Optional, Dict
+from datetime import datetime
 
 # Import directly to avoid loading full fast_cody package dependencies
 import importlib.util
@@ -85,9 +86,10 @@ def run_pipeline(
         if glb_path_str.endswith(".obj"):
             print("[2] Model is already OBJ format, converting to MSH ...")
             # OBJ already exists, just need to convert to MSH
-            obj_stem = Path(glb_path_str).stem
+            # Create timestamped output directory
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             out_root = Path(converted_out).resolve()
-            job_dir = out_root / obj_stem
+            job_dir = out_root / timestamp
             job_dir.mkdir(parents=True, exist_ok=True)
 
             # Copy OBJ and texture to converted directory
