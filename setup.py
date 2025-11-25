@@ -48,9 +48,17 @@ class CMakeBuild(build_ext):
             '-DCMAKE_POLICY_VERSION_MINIMUM=3.5'
         ]
 
-        # Force ARM64 architecture on macOS (Apple Silicon)
+        # Set architecture based on current platform
         if platform.system() == "Darwin":
-            cmake_args.append("-DCMAKE_OSX_ARCHITECTURES=arm64")
+            # Detect architecture: arm64 for Apple Silicon, x86_64 for Intel Macs
+            arch = platform.machine()
+            if arch == "arm64":
+                cmake_args.append("-DCMAKE_OSX_ARCHITECTURES=arm64")
+            elif arch == "x86_64":
+                cmake_args.append("-DCMAKE_OSX_ARCHITECTURES=x86_64")
+            else:
+                # Default to native architecture if unknown
+                cmake_args.append(f"-DCMAKE_OSX_ARCHITECTURES={arch}")
 
         # This is horrible, I don't know other way of installing dependencies on the wheel dependencies
         # os.system("python -m pip install numpy")

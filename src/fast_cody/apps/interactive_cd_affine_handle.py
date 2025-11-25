@@ -98,17 +98,243 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
     st = fc.fast_cd_state(z0, p0)
 
     step = 0
+    floor_ids_ref = [[]]  # List of floor tile IDs
+    floor_transforms_ref = [{}]  # Dictionary mapping floor_id -> (p0, z0)
+    camera_mode = ['third_person']  # 'third_person' or 'first_person'
+    current_fish_pos = [np.array([0.0, 0.0, 0.0])]  # Store just the fish position (updated each frame)
+
+    # Camera update functions
+    def update_third_person_camera():
+        """Static third-person camera above the floor"""
+        camera_eye = np.array([[0.0, 2.5, 5.0]])  # Above and behind (row vector)
+        camera_center = np.array([[0.0, 0.0, 0.0]])  # Look at origin (row vector)
+
+        viewer.viewer.set_camera_eye(camera_eye)
+        viewer.viewer.set_camera_center(camera_center)
+
+    def update_first_person_camera():
+        """Camera that follows behind and above the fish"""
+        # Get the fish position - simple position tracking only
+        fish_pos = current_fish_pos[0]
+
+        # Debug: print fish position every 30 frames
+        if step % 30 == 0:
+            print(f"\n=== Fish Position Debug (step {step}) ===")
+            print(f"Fish position: [{fish_pos[0]:.3f}, {fish_pos[1]:.3f}, {fish_pos[2]:.3f}]")
+
+        # Camera follows with fixed world-space offset (behind and above)
+        camera_offset_x = 0.0      # No X offset
+        camera_offset_y = 1.5      # Height above fish
+        camera_offset_z = -3.0     # Behind the fish in world space
+
+        camera_eye = np.array([
+            fish_pos[0] + camera_offset_x,
+            fish_pos[1] + camera_offset_y,
+            fish_pos[2] + camera_offset_z
+        ])
+
+        # Camera always looks directly at the fish
+        camera_center = fish_pos.copy()
+
+        # Debug: print camera info
+        if step % 30 == 0:
+            print(f"Camera eye: [{camera_eye[0]:.3f}, {camera_eye[1]:.3f}, {camera_eye[2]:.3f}]")
+            print(f"Camera center: [{camera_center[0]:.3f}, {camera_center[1]:.3f}, {camera_center[2]:.3f}]")
+            print("="*50)
+
+        # Convert to row vectors (1, 3)
+        camera_eye_row = camera_eye.reshape(1, 3)
+        camera_center_row = camera_center.reshape(1, 3)
+
+        viewer.viewer.set_camera_eye(camera_eye_row)
+        viewer.viewer.set_camera_center(camera_center_row)
+
     def pre_draw_callback():
          nonlocal J, B, T0, sim, st, step
+         # Get the current fish transform from the guizmo/user input
          p = viewer.T0[0:3, :].reshape( (12, 1))
          z = sim.step( p, st)
          st.update(z, p)
+
+         # Extract just the translation (last column of the 3x4 transform)
+         # p is stored in Fortran order: [R11, R21, R31, R12, R22, R32, R13, R23, R33, tx, ty, tz]
+         fish_pos = np.array([p[9, 0], p[10, 0], p[11, 0]])
+         current_fish_pos[0] = fish_pos
+
          # U = np.reshape(J @ p + B @ z, (J.shape[0]//3, 3), order="F") # full positions
          viewer.update_subspace_coefficients(z, p)
+
+         # Update all floor tiles with static identity transforms
+         for floor_id in floor_ids_ref[0]:
+             if floor_id in floor_transforms_ref[0]:
+                 p0_floor, z0_floor = floor_transforms_ref[0][floor_id]
+                 viewer.viewer.set_bone_transforms(p0_floor, z0_floor, floor_id)
+                 viewer.viewer.updateGL(floor_id)
+
+         # Update camera based on current mode
+         if camera_mode[0] == 'first_person':
+             update_first_person_camera()
+         else:
+             update_third_person_camera()
+
          step += 1
 
     viewer = fc.viewers.interactive_handle_subspace_viewer(V, T, Wp, Ws,  pre_draw_callback,T0=T0,
                                                   texture_png=texture_png, texture_obj=texture_obj,
                                                   t0=to, s0=so, init_guizmo=True)
+
+    # Add custom key callback for camera switching
+    original_callback = viewer.callback_key_pressed
+    def custom_key_callback(key, modifier):
+        # Handle 'V' key for camera switching
+        if key == ord('v') or key == ord('V'):
+            if camera_mode[0] == 'third_person':
+                camera_mode[0] = 'first_person'
+                print("Switched to first-person camera (follows fish)")
+            else:
+                camera_mode[0] = 'third_person'
+                print("Switched to third-person camera (static overview)")
+            return False
+
+        # Call original callback for other keys (g, c, etc.)
+        return original_callback(key, modifier)
+
+    viewer.viewer.set_key_callback(custom_key_callback)
+    print("  v        Toggle Camera View (Third-person / First-person)")
+
+    # === ADD OCEAN FLOOR (3x3 GRID) ===
+    # Load and add a 3x3 grid of static ocean floor tiles as environment objects
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
+    data_dir = os.path.join(project_root, "data")
+    floor_path = os.path.join(data_dir, "sea_floor.obj")
+    floor_texture_path = os.path.join(data_dir, "sandtexture.jpg")
+
+    if os.path.exists(floor_path):
+        try:
+            print(f"\nLoading ocean floor grid (3x3) from {floor_path}...")
+
+            # Load the floor mesh once (we'll reuse it for all tiles)
+            [V_floor_base, TC_floor, N_floor, F_floor, FTC_floor, FN_floor] = fcd.readOBJ_tex(floor_path)
+            print(f"  Loaded floor template: {V_floor_base.shape[0]} vertices, {F_floor.shape[0]} faces")
+
+            # Triangulate quads if needed
+            if F_floor.shape[1] == 4:
+                print(f"  Triangulating quad mesh...")
+                num_quads = F_floor.shape[0]
+                F_floor_tri = np.zeros((num_quads * 2, 3), dtype=np.int32)
+                F_floor_tri[0::2, :] = F_floor[:, [0, 1, 2]]
+                F_floor_tri[1::2, :] = F_floor[:, [0, 2, 3]]
+                F_floor = F_floor_tri
+
+                if FTC_floor is not None and FTC_floor.shape[1] == 4:
+                    FTC_tri = np.zeros((num_quads * 2, 3), dtype=np.int32)
+                    FTC_tri[0::2, :] = FTC_floor[:, [0, 1, 2]]
+                    FTC_tri[1::2, :] = FTC_floor[:, [0, 2, 3]]
+                    FTC_floor = FTC_tri
+                    print(f"  Triangulated: {F_floor.shape[0]} triangles")
+
+            # Make base arrays contiguous
+            F_floor = np.ascontiguousarray(F_floor, dtype=np.int32)
+
+            # Floor tile parameters
+            tile_scale = 0.05  # Scale to match fish size
+            floor_y_offset = -0.5  # Position just below fish
+
+            # Calculate tile size in world space
+            V_floor_scaled_base = V_floor_base * tile_scale
+            tile_width = V_floor_scaled_base[:, 0].max() - V_floor_scaled_base[:, 0].min()
+            tile_depth = V_floor_scaled_base[:, 2].max() - V_floor_scaled_base[:, 2].min()
+
+            print(f"  Tile dimensions: width={tile_width:.2f}, depth={tile_depth:.2f}")
+            print(f"  Creating 3x3 grid...")
+
+            # Check texture availability
+            use_texture = (os.path.exists(floor_texture_path) and
+                          TC_floor is not None and FTC_floor is not None and
+                          TC_floor.shape[0] > 0 and FTC_floor.shape[0] > 0)
+
+            if use_texture:
+                TC_contig = np.ascontiguousarray(TC_floor, dtype=np.float64)
+                FTC_contig = np.ascontiguousarray(FTC_floor, dtype=np.int32)
+
+            # Create 3x3 grid of floor tiles
+            num_bones = 16
+            num_modes_floor = 16
+            floor_tiles = []
+
+            for i in range(3):  # rows (Z direction)
+                for j in range(3):  # columns (X direction)
+                    # Calculate tile offset (centered around origin)
+                    x_offset = (j - 1) * tile_width  # -1, 0, 1 -> left, center, right
+                    z_offset = (i - 1) * tile_depth  # -1, 0, 1 -> back, center, front
+
+                    # Create translated copy of vertices
+                    V_floor_tile = V_floor_scaled_base.copy()
+                    V_floor_tile[:, 0] += x_offset
+                    V_floor_tile[:, 1] += floor_y_offset
+                    V_floor_tile[:, 2] += z_offset
+                    V_floor_tile = np.ascontiguousarray(V_floor_tile, dtype=np.float64)
+
+                    # Add floor mesh
+                    floor_id = viewer.viewer.add_mesh()
+                    viewer.viewer.set_mesh(V_floor_tile, F_floor, floor_id)
+
+                    # Set texture if available
+                    if use_texture:
+                        try:
+                            viewer.viewer.set_texture(floor_texture_path, TC_contig, FTC_contig, floor_id)
+                        except Exception as e:
+                            print(f"  Warning: Could not apply texture to tile ({i},{j}): {e}")
+
+                    # Set weights - bind all vertices to bone 0 with weight 1.0
+                    num_verts = V_floor_tile.shape[0]
+                    Wp_floor = np.zeros((num_verts, num_bones), dtype=np.float64)
+                    Wp_floor[:, 0] = 1.0  # All vertices fully bound to bone 0 (identity)
+                    Ws_floor = np.zeros((num_verts, num_modes_floor), dtype=np.float64)
+                    viewer.viewer.set_weights(Wp_floor, Ws_floor, floor_id)
+
+                    # Set rendering options AFTER weights
+                    if use_texture:
+                        viewer.viewer.set_show_lines(False, floor_id)
+                        viewer.viewer.set_face_based(False, floor_id)
+                    else:
+                        floor_color = np.array([200, 180, 150]) / 255.0
+                        viewer.viewer.set_color(floor_color, floor_id)
+                        viewer.viewer.set_face_based(True, floor_id)
+                        viewer.viewer.invert_normals(True, floor_id)
+                        viewer.viewer.set_show_lines(False, floor_id)
+
+                    # Initialize static identity bone transforms
+                    p0_floor = np.zeros((num_bones * 12, 1), dtype=np.float64)
+                    for bone_idx in range(num_bones):
+                        base_idx = bone_idx * 12
+                        p0_floor[base_idx + 0] = 1.0   # Identity matrix diagonal
+                        p0_floor[base_idx + 5] = 1.0
+                        p0_floor[base_idx + 10] = 1.0
+                    z0_floor = np.zeros((num_modes_floor * 12, 1), dtype=np.float64)
+
+                    viewer.viewer.set_bone_transforms(p0_floor, z0_floor, floor_id)
+
+                    # Store floor ID and transforms
+                    floor_ids_ref[0].append(floor_id)
+                    floor_transforms_ref[0][floor_id] = (p0_floor, z0_floor)
+                    floor_tiles.append((floor_id, i, j, x_offset, z_offset))
+
+                    print(f"  Tile ({i},{j}): mesh ID {floor_id}, offset=({x_offset:.2f}, {z_offset:.2f})")
+
+            print(f"\n  Floor grid loaded successfully: {len(floor_tiles)} tiles")
+            print(f"  Floor tiles are static environment objects (not controlled by affine handle)")
+
+        except Exception as e:
+            print(f"ERROR: Failed to load ocean floor: {e}")
+            import traceback
+            traceback.print_exc()
+            print("  Continuing without floor...")
+    else:
+        print(f"Floor file not found: {floor_path}")
+        print("Continuing without floor...")
+    # =======================
+
     viewer.launch()
 

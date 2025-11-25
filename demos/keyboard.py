@@ -1,0 +1,3 @@
+from fast_cody.apps.interactive_cd_keyboard_handle import interactive_cd_keyboard_handle
+
+interactive_cd_keyboard_handle()

@@ -170,19 +170,19 @@ void bind_viewer(py::module& m)
         .def("set_secondary_bone_transforms", &fast_cd_viewer_custom_shader::set_secondary_bone_transforms)
         .def("set_bone_transforms", &fast_cd_viewer_custom_shader::set_bone_transforms)
 
-        .def("set_caustics_atlas", &fast_cd_viewer_custom_shader::set_caustics_atlas)
-
-        .def("set_uniform",
-            [](fast_cd_viewer_custom_shader& v, const std::string& name, int value, int id) {
-                v.set_uniform(name, value, id);
-            },
-            py::arg("uniform_name"), py::arg("value"), py::arg("id") = 0)
-
-        .def("set_uniform",
-            [](fast_cd_viewer_custom_shader& v, const std::string& name, float value, int id) {
-                v.set_uniform(name, value, id);
-            },
-            py::arg("uniform_name"), py::arg("value"), py::arg("id") = 0)
+        // NOTE: set_caustics_atlas and set_uniform are not implemented in fast_cd_viewer_custom_shader
+        // These bindings are commented out until the methods are added to the class
+        // .def("set_caustics_atlas", &fast_cd_viewer_custom_shader::set_caustics_atlas)
+        // .def("set_uniform",
+        //     [](fast_cd_viewer_custom_shader& v, const std::string& name, int value, int id) {
+        //         v.set_uniform(name, value, id);
+        //     },
+        //     py::arg("uniform_name"), py::arg("value"), py::arg("id") = 0)
+        // .def("set_uniform",
+        //     [](fast_cd_viewer_custom_shader& v, const std::string& name, float value, int id) {
+        //         v.set_uniform(name, value, id);
+        //     },
+        //     py::arg("uniform_name"), py::arg("value"), py::arg("id") = 0)
 
         .def("updateGL", &fast_cd_viewer_custom_shader::updateGL);
 

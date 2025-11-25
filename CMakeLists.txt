@@ -4,10 +4,26 @@ project(fast_cd_pyb
   "Fast CD Python Bindings"
 )
 
-# Force ARM64 architecture on macOS (Apple Silicon) to avoid x86_64 builds
-# This ensures the extension is built natively for M1/M2 without Rosetta
+# Set architecture based on current platform
+# This allows the extension to be built for the native architecture (arm64 for Apple Silicon, x86_64 for Intel Macs)
 if(APPLE)
-    set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "" FORCE)
+    # Only set if not already specified (allows override from setup.py)
+    if(NOT CMAKE_OSX_ARCHITECTURES)
+        # Detect architecture from CMAKE_SYSTEM_PROCESSOR or default to native
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+            set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "" FORCE)
+        elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64")
+            set(CMAKE_OSX_ARCHITECTURES "x86_64" CACHE STRING "" FORCE)
+        else()
+            # Default to native architecture if unknown
+            execute_process(
+                COMMAND uname -m
+                OUTPUT_VARIABLE ARCH
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            set(CMAKE_OSX_ARCHITECTURES "${ARCH}" CACHE STRING "" FORCE)
+        endif()
+    endif()
 endif()
 
 set(CMAKE_CXX_STANDARD 17)

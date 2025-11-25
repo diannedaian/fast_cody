@@ -141,131 +141,6 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
     fragment_shader_path = fc.get_shader("./fragment_shader.glsl")
     viewer_base = fcd.fast_cd_viewer_custom_shader(vertex_shader_path, fragment_shader_path, 16, 16)
 
-    # === LOAD UNDERWATER FLOOR MESH ==================================
-    # NOTE: The floor is a STATIC mesh - it does NOT use fast_cody's secondary motion.
-    # It will not be affected by the simulation (no weights, no bone transforms).
-    # Only mesh ID 0 (the fish) gets updated in the pre_draw_callback.
-
-    # Path to the OBJ floor model (PLACE YOUR PATH HERE)
-    floor_path = "data/sea_floor.obj"
-    floor_id = None  # Will be set if floor loads successfully
-
-    # Check if floor file exists and warn if too large
-    if os.path.exists(floor_path):
-        file_size_mb = os.path.getsize(floor_path) / (1024 * 1024)  # Size in MB
-        max_size_mb = 100  # Maximum recommended size (100 MB)
-
-        if file_size_mb > max_size_mb:
-            print(f"WARNING: Floor OBJ file is very large ({file_size_mb:.1f} MB).")
-            print(f"         This may cause slow loading or memory issues.")
-            print(f"         Consider simplifying the mesh or using a smaller model.")
-            print(f"         Skipping floor mesh loading to prevent crashes.")
-            print(f"         To load anyway, increase max_size_mb or simplify the mesh.")
-        else:
-            try:
-                print(f"Loading static floor mesh from {floor_path} ({file_size_mb:.1f} MB)...")
-                # Read mesh
-                V_floor, F_floor = igl.read_triangle_mesh(floor_path)
-                print(f"  Loaded {V_floor.shape[0]} vertices, {F_floor.shape[0]} faces")
-
-                # Add floor mesh to viewer (static - no weights needed)
-                floor_id = viewer_base.add_mesh(V_floor, F_floor)
-                print(f"  Floor mesh ID: {floor_id}")
-                print(f"[DEBUG] Floor mesh added: floor_id = {floor_id}")
-
-                # Optional: set floor to be double-sided
-                viewer_base.set_face_based(True, floor_id)
-
-                # Optional: scale or move floor if necessary
-                # (Adjust these values depending on your scene)
-                V_floor_scaled = V_floor.copy()
-                V_floor_scaled *= 3.0      # scale up to make it more visible
-                # Move the floor BELOW the fish so it is visible
-                V_floor_scaled[:,1] -= 3.0
-                viewer_base.set_vertices(floor_id, V_floor_scaled)
-                print(f"  Floor positioned below fish (scale: 3.0, Y offset: -3.0)")
-                print(f"[DEBUG] Floor mesh geometry: V={V_floor_scaled.shape}, F={F_floor.shape}")
-
-                # Set a visible color for the floor (sand/beige color to make it stand out)
-                floor_color = np.array([200, 180, 150]) / 255.0  # Sand/beige color
-                viewer_base.set_color(floor_color, floor_id)
-                print(f"  Set floor color to sand/beige for visibility")
-
-                # The custom shader expects EXACTLY 16 primary + 16 secondary weights per vertex.
-                # The floor must provide full-size weight arrays even if all zeros.
-                num_bones = 16
-                num_modes_floor = 16  # secondary modes
-                num_verts = V_floor_scaled.shape[0]
-
-                Wp_floor = np.zeros((num_verts, num_bones), dtype=np.float64)
-                Ws_floor = np.zeros((num_verts, num_modes_floor), dtype=np.float64)
-
-                viewer_base.set_weights(Wp_floor, Ws_floor, floor_id)
-                print(f"  Set zero weights for static floor (16 bones, 16 modes)")
-
-                # Initialize identity bone transforms for the floor (required by shader)
-                # Even though the floor is static, the shader expects bone transform data to be initialized
-                # Need transforms for all 16 primary bones (16 * 12 = 192 params)
-                p0_floor = np.zeros((num_bones * 12, 1), dtype=np.float64)  # 16 bones * 12 params each
-                # Set identity matrices for all bones: [1 0 0 0; 0 1 0 0; 0 0 1 0] for each bone
-                for bone_idx in range(num_bones):
-                    base_idx = bone_idx * 12
-                    p0_floor[base_idx + 0] = 1.0   # Identity matrix diagonal
-                    p0_floor[base_idx + 5] = 1.0
-                    p0_floor[base_idx + 10] = 1.0
-                z0_floor = np.zeros((num_modes_floor * 12, 1), dtype=np.float64)  # Zero secondary transforms
-                try:
-                    viewer_base.set_bone_transforms(p0_floor, z0_floor, floor_id)
-                    print(f"  Initialized identity bone transforms for static floor ({num_bones} bones)")
-                except Exception as e:
-                    print(f"  Warning: Could not initialize bone transforms for floor: {e}")
-
-                # NOTE: The floor is static - weights are all zeros and bone transforms are identity.
-                # The pre_draw_callback only updates mesh 0 (the fish), so the floor
-                # will remain completely static and unaffected by the simulation.
-
-                # Load texture if the OBJ has an accompanying texture file
-                # Check for sandtexture.jpg first, then fall back to same-name textures
-                texture_candidate = None
-                # First, try the specific sandtexture.jpg file
-                sand_tex_path = "data/sandtexture.jpg"
-                if os.path.exists(sand_tex_path):
-                    texture_candidate = sand_tex_path
-                    print(f"  Found sand texture: {sand_tex_path}")
-                else:
-                    # Fall back to textures with same name as OBJ
-                    for ext in ["png", "jpg", "jpeg"]:
-                        tex_path = floor_path.replace(".obj", f".{ext}")
-                        if os.path.exists(tex_path):
-                            texture_candidate = tex_path
-                            break
-
-                if texture_candidate is not None:
-                    # You must provide UVs and face-UVs (TC, FTC)
-                    # If your OBJ already has UVs, load them:
-                    try:
-                        obj_data = igl.readOBJ(floor_path)
-                        if len(obj_data) > 3 and obj_data[3].shape[0] != 0:
-                            _, _, _, TC, _, FTC = obj_data
-                            viewer_base.set_texture(texture_candidate, TC, FTC, floor_id)
-                            print(f"  Applied texture: {texture_candidate}")
-                        else:
-                            print("  Floor OBJ has no UVs: cannot apply texture.")
-                    except Exception as e:
-                        print(f"  Warning: Could not load UVs for texture: {e}")
-                else:
-                    print("  No texture found next to OBJ, skipping texture setup.")
-
-                print("  Floor mesh loaded successfully!")
-            except Exception as e:
-                print(f"ERROR: Failed to load floor mesh: {e}")
-                print("       Continuing without floor mesh...")
-    else:
-        print(f"Floor OBJ file not found: {floor_path}")
-        print("Skipping floor mesh loading...")
-
-    # ==================================================================
-
     # Load caustics atlas texture (with error handling)
     # TEMPORARILY DISABLED until method is available in compiled extension
     # try:
@@ -359,10 +234,165 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
 
     def guizmo_callback_wrapper(A):
         nonlocal T0
-        T0 = A
+        # Copy the transform from guizmo
+        # Make a proper copy to avoid reference issues
+        A_new = A.copy().astype(dtype=np.float32, order="F")
+
+        # Validate: reject if contains NaN or Inf
+        if np.any(np.isnan(A_new)) or np.any(np.isinf(A_new)):
+            print(f"[WARNING] Guizmo returned invalid transform (NaN/Inf), keeping previous T0")
+            return
+
+        T0 = A_new
 
     # Initialize guizmo - visible by default since we start in mouse control mode
     viewer_base.init_guizmo(True, T0, guizmo_callback_wrapper, transform_mode)
+
+    # Initialize fish bone transforms BEFORE launch (just like floor)
+    p0 = T0[0:3, :].reshape((12, 1))
+    viewer_base.set_bone_transforms(p0, z0, 0)
+
+    print(f"\n" + "=" * 60)
+    print(f"FISH SETUP COMPLETE:")
+    print(f"  Mesh ID: 0")
+    print(f"  Controlled by: Affine handle (T0)")
+    print(f"  Initial T0 position: {T0[0:3, 3]}")
+    print(f"  Initial bone transforms set")
+    print(f"=" * 60)
+
+    # === LOAD OCEAN FLOOR (SINGLE TILE FOR NOW) ==================================
+    # Load ONE floor tile as a test - matching multi_fish pattern exactly
+    # IMPORTANT: Floor is environment object and should NOT be controlled by the affine handle
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
+    data_dir = os.path.join(project_root, "data")
+    floor_path = os.path.join(data_dir, "sea_floor.obj")
+    floor_texture_path = os.path.join(data_dir, "sandtexture.jpg")
+
+    floor_id = None  # Single floor tile ID
+    floor_transforms = {}  # Store static identity transforms
+
+    if os.path.exists(floor_path):
+        try:
+            print(f"\nLoading ocean floor from {floor_path}...")
+
+            # Load the floor mesh
+            [V_floor, TC_floor, N_floor, F_floor, FTC_floor, FN_floor] = fcd.readOBJ_tex(floor_path)
+            print(f"  Loaded floor: {V_floor.shape[0]} vertices, {F_floor.shape[0]} faces")
+
+            # Triangulate quads if needed
+            if F_floor.shape[1] == 4:
+                print(f"  Triangulating quad mesh...")
+                num_quads = F_floor.shape[0]
+                F_floor_tri = np.zeros((num_quads * 2, 3), dtype=np.int32)
+                F_floor_tri[0::2, :] = F_floor[:, [0, 1, 2]]
+                F_floor_tri[1::2, :] = F_floor[:, [0, 2, 3]]
+                F_floor = F_floor_tri
+
+                if FTC_floor is not None and FTC_floor.shape[1] == 4:
+                    FTC_tri = np.zeros((num_quads * 2, 3), dtype=np.int32)
+                    FTC_tri[0::2, :] = FTC_floor[:, [0, 1, 2]]
+                    FTC_tri[1::2, :] = FTC_floor[:, [0, 2, 3]]
+                    FTC_floor = FTC_tri
+                    print(f"  Triangulated: {F_floor.shape[0]} triangles")
+
+            # Scale and position the floor
+            tile_scale = 3.0
+            floor_y_offset = -2.0  # Position below fish
+            V_floor_scaled = V_floor * tile_scale
+            V_floor_scaled[:, 1] += floor_y_offset
+
+            print(f"  Floor bounds: X=[{V_floor_scaled[:, 0].min():.2f}, {V_floor_scaled[:, 0].max():.2f}], "
+                  f"Y=[{V_floor_scaled[:, 1].min():.2f}, {V_floor_scaled[:, 1].max():.2f}], "
+                  f"Z=[{V_floor_scaled[:, 2].min():.2f}, {V_floor_scaled[:, 2].max():.2f}]")
+
+            # Make arrays contiguous
+            V_floor_scaled = np.ascontiguousarray(V_floor_scaled, dtype=np.float64)
+            F_floor = np.ascontiguousarray(F_floor, dtype=np.int32)
+
+            # STEP 1: Create empty mesh slot (like multi_fish line 256)
+            floor_id = viewer_base.add_mesh()
+            print(f"  Created floor mesh slot ID: {floor_id}")
+
+            # STEP 2: Set mesh geometry (like multi_fish line 277)
+            viewer_base.set_mesh(V_floor_scaled, F_floor, floor_id)
+            print(f"  Set floor geometry")
+
+            # STEP 3: Set texture AFTER set_mesh but BEFORE set_weights (like multi_fish line 342)
+            use_texture = (os.path.exists(floor_texture_path) and
+                          TC_floor is not None and FTC_floor is not None and
+                          TC_floor.shape[0] > 0 and FTC_floor.shape[0] > 0)
+
+            if use_texture:
+                try:
+                    TC_contig = np.ascontiguousarray(TC_floor, dtype=np.float64)
+                    FTC_contig = np.ascontiguousarray(FTC_floor, dtype=np.int32)
+                    viewer_base.set_texture(floor_texture_path, TC_contig, FTC_contig, floor_id)
+                    viewer_base.set_show_lines(False, floor_id)
+                    viewer_base.set_face_based(False, floor_id)
+                    print(f"  Applied texture to floor")
+                except Exception as e:
+                    print(f"  Warning: Could not apply texture: {e}")
+                    use_texture = False
+
+            if not use_texture:
+                # No texture - use sand color (matching simple_floor_viewer)
+                floor_color = np.array([200, 180, 150]) / 255.0
+                viewer_base.set_color(floor_color, floor_id)
+                viewer_base.set_face_based(True, floor_id)
+                viewer_base.invert_normals(True, floor_id)  # IMPORTANT: Invert normals for non-textured floor
+                viewer_base.set_show_lines(False, floor_id)
+                print(f"  Applied sand color to floor (with inverted normals)")
+
+            # STEP 4: Set weights AFTER texture (like multi_fish line 303)
+            # Bind all vertices to bone 0 with weight 1.0
+            num_bones = 16
+            num_modes_floor = 16
+            num_verts = V_floor_scaled.shape[0]
+
+            Wp_floor = np.zeros((num_verts, num_bones), dtype=np.float64)
+            Wp_floor[:, 0] = 1.0  # All vertices fully bound to bone 0 (identity)
+            Ws_floor = np.zeros((num_verts, num_modes_floor), dtype=np.float64)
+
+            viewer_base.set_weights(Wp_floor, Ws_floor, floor_id)
+            print(f"  Set floor weights (all bound to bone 0)")
+
+            # STEP 5: Initialize static identity bone transforms
+            # These are separate from T0 (fish transform) and remain static
+            p0_floor = np.zeros((num_bones * 12, 1), dtype=np.float64)
+            for bone_idx in range(num_bones):
+                base_idx = bone_idx * 12
+                p0_floor[base_idx + 0] = 1.0   # Identity matrix diagonal
+                p0_floor[base_idx + 5] = 1.0
+                p0_floor[base_idx + 10] = 1.0
+            z0_floor = np.zeros((num_modes_floor * 12, 1), dtype=np.float64)
+
+            # Store the transforms
+            floor_transforms[floor_id] = (p0_floor, z0_floor)
+
+            # Set initial bone transforms
+            viewer_base.set_bone_transforms(p0_floor, z0_floor, floor_id)
+
+            print(f"\n" + "=" * 60)
+            print(f"FLOOR SETUP COMPLETE:")
+            print(f"  Mesh ID: {floor_id}")
+            print(f"  Controlled by: Static identity transform (NOT affine handle)")
+            print(f"  Floor Y position: {floor_y_offset}")
+            print(f"  Floor is a static environment object")
+            print(f"=" * 60)
+
+        except Exception as e:
+            print(f"ERROR: Failed to load ocean floor: {e}")
+            import traceback
+            traceback.print_exc()
+            print("  Continuing without floor...")
+            floor_id = None
+    else:
+        print(f"Floor file not found: {floor_path}")
+        print("Continuing without floor...")
+        floor_id = None
+
+    # ==================================================================
 
     vis_cd = True
     guizmo_visible = True  # Initially visible since control_mode starts as 'mouse'
@@ -624,8 +654,9 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
         viewer_base.set_camera_center(look_at_point_row)
 
     step = 0
+    first_frame_rendered = False
     def pre_draw_callback():
-        nonlocal J, B, T0, sim, st, step, last_update_time, floor_id
+        nonlocal J, B, T0, sim, st, step, last_update_time, first_frame_rendered
 
         current_time = time.time()
         dt = current_time - last_update_time
@@ -642,15 +673,27 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
             if hasattr(viewer_base, 'guizmo'):
                 viewer_base.guizmo.visible = False
         else:
-            # Mouse control: update T0 from guizmo (user is controlling via guizmo)
-            if hasattr(viewer_base, 'guizmo') and viewer_base.guizmo.visible:
-                T0 = viewer_base.guizmo.T.copy()
+            # Mouse control: T0 is already updated by guizmo_callback_wrapper
+            # Just ensure guizmo stays visible
+            if hasattr(viewer_base, 'guizmo'):
+                viewer_base.guizmo.visible = True
 
         # Update camera based on camera mode (independent of control mode)
         if camera_mode == 'first_person':
             update_first_person_camera()
         else:
             update_third_person_camera()
+        
+        # Debug output: Print fish position periodically
+        # Only print if T0 is valid (no NaN/Inf)
+        if step % 60 == 0 and not np.any(np.isnan(T0)) and not np.any(np.isinf(T0)):  # Every second at 60 FPS
+            fish_pos = T0[0:3, 3].copy()
+            print(f"\n[DEBUG Frame {step}]")
+            print(f"  Fish position: [{fish_pos[0]:.2f}, {fish_pos[1]:.2f}, {fish_pos[2]:.2f}]")
+            print(f"  Camera mode: {camera_mode}, Control mode: {control_mode}")
+        elif step % 60 == 0:
+            print(f"\n[WARNING Frame {step}] T0 contains NaN or Inf!")
+            print(f"  T0 = \n{T0}")
 
         # Update simulation
         p = T0[0:3, :].reshape((12, 1))
@@ -658,11 +701,27 @@ def interactive_cd_dual_mode(msh_file=None, V=None, T=None, Ws=None, l=None, mu=
         st.update(z, p)
 
         # Update viewer - fish mesh (ID 0) with bone transforms
-        viewer_base.set_bone_transforms(p, z * (1.0 if vis_cd else 0.0), 0)
-        viewer_base.updateGL(0)
+        try:
+            viewer_base.set_bone_transforms(p, z * (1.0 if vis_cd else 0.0), 0)
+            viewer_base.updateGL(0)
+            
+            # Debug output on first frame
+            if not first_frame_rendered:
+                print(f"[DEBUG] First frame rendered - Fish bone transforms set")
+                print(f"  p shape: {p.shape}, z shape: {z.shape}")
+                print(f"  T0 position: {T0[0:3, 3]}")
+                first_frame_rendered = True
+        except Exception as e:
+            print(f"[ERROR] Failed to update fish mesh: {e}")
+            import traceback
+            traceback.print_exc()
 
-        # NOTE: Floor mesh is static and does NOT receive updateGL() or set_bone_transforms()
-        # The floor remains unchanged throughout the simulation
+        # Update floor tile with its static identity transform
+        # Floor is environment object and remains static (not controlled by T0)
+        if floor_id is not None and floor_id in floor_transforms:
+            p0_floor, z0_floor = floor_transforms[floor_id]
+            viewer_base.set_bone_transforms(p0_floor, z0_floor, floor_id)
+            viewer_base.updateGL(floor_id)
 
         step += 1
 

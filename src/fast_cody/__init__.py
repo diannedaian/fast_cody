@@ -32,7 +32,7 @@ from .umfpack_lu_solve import umfpack_lu_solve
 from .eigs import eigs
 from .fast_cd_sim import fast_cd_sim, fast_cd_state
 from .one_euro_filter import OneEuroFilter
-from .mediapipe_face_captor import mediapipe_face_captor
+# from .mediapipe_face_captor import mediapipe_face_captor  # Commented out - requires mediapipe
 from .world2rel import world2rel
 from .read_msh import read_msh
 
