@@ -3,11 +3,44 @@ import numpy as np
 import scipy as sp
 import igl
 import json
+import random
 from os.path import basename, splitext
 
 
 import fast_cd_pyb as fcd
 import fast_cody as fc
+
+
+def load_floor_mesh(floor_path):
+    """
+    Load and process a floor mesh (OBJ file).
+    Returns: (V, F, TC, FTC) or None if failed
+    """
+    if not os.path.exists(floor_path):
+        return None
+
+    try:
+        [V_floor, TC_floor, N_floor, F_floor, FTC_floor, FN_floor] = fcd.readOBJ_tex(floor_path)
+
+        # Triangulate quads if needed
+        if F_floor.shape[1] == 4:
+            num_quads = F_floor.shape[0]
+            F_floor_tri = np.zeros((num_quads * 2, 3), dtype=np.int32)
+            F_floor_tri[0::2, :] = F_floor[:, [0, 1, 2]]
+            F_floor_tri[1::2, :] = F_floor[:, [0, 2, 3]]
+            F_floor = F_floor_tri
+
+            if FTC_floor is not None and FTC_floor.shape[1] == 4:
+                FTC_tri = np.zeros((num_quads * 2, 3), dtype=np.int32)
+                FTC_tri[0::2, :] = FTC_floor[:, [0, 1, 2]]
+                FTC_tri[1::2, :] = FTC_floor[:, [0, 2, 3]]
+                FTC_floor = FTC_tri
+
+        F_floor = np.ascontiguousarray(F_floor, dtype=np.int32)
+        return (V_floor, F_floor, TC_floor, FTC_floor)
+    except Exception as e:
+        print(f"  Warning: Failed to load {floor_path}: {e}")
+        return None
 
 
 def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None, mu=1e4, rho=1e3,
@@ -172,25 +205,28 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
          # U = np.reshape(J @ p + B @ z, (J.shape[0]//3, 3), order="F") # full positions
          viewer.update_subspace_coefficients(z, p)
 
+         # Update time uniform for caustics animation if enabled
+         # Set for ALL meshes (fish + floor) so caustics work on everything
+         if enable_caustics and hasattr(viewer.viewer, 'set_uniform'):
+             import time as time_module
+             if not hasattr(pre_draw_callback, 'start_time'):
+                 pre_draw_callback.start_time = time_module.time()
+             current_time = time_module.time() - pre_draw_callback.start_time
+
+             # Set time uniform for fish (mesh 0)
+             viewer.viewer.set_uniform("u_time", float(current_time), 0)
+
+             # Set time uniform for all floor meshes
+             for floor_id in floor_ids_ref[0]:
+                 viewer.viewer.set_uniform("u_time", float(current_time), floor_id)
+
          # Update all floor tiles
          for floor_id in floor_ids_ref[0]:
              if floor_id in floor_transforms_ref[0]:
                  p0_floor, z0_floor = floor_transforms_ref[0][floor_id]
 
-                 # Animate caustics if enabled
-                 if enable_caustics and floor_id in caustics_data_ref[0]:
-                     caustics_info = caustics_data_ref[0][floor_id]
-                     num_frames = caustics_info['num_frames']
-                     frame_rate = caustics_info['frame_rate']
-                     caustics_frames = caustics_info['caustics_frames']
-                     TC = caustics_info['TC']
-                     FTC = caustics_info['FTC']
-
-                     # Calculate current frame
-                     current_frame = int((step / frame_rate) % num_frames)
-
-                     # Reload texture with current caustics frame
-                     viewer.viewer.set_texture(caustics_frames[current_frame], TC, FTC, floor_id)
+                # Caustics are now handled in the shader as an overlay, no need to swap textures
+                # The shader uses u_causticsAtlas uniform which is set up separately
 
                  viewer.viewer.set_bone_transforms(p0_floor, z0_floor, floor_id)
                  viewer.viewer.updateGL(floor_id)
@@ -230,8 +266,12 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
          step += 1
 
     viewer = fc.viewers.interactive_handle_subspace_viewer(V, T, Wp, Ws,  pre_draw_callback,T0=T0,
-                                                  texture_png=texture_png, texture_obj=texture_obj,
-                                                  t0=to, s0=so, init_guizmo=True)
+                                                 texture_png=texture_png, texture_obj=texture_obj,
+                                                 t0=to, s0=so, init_guizmo=True)
+
+    # Set background color to #5FBFD2 (ocean blue/cyan)
+    background_color = np.array([95, 191, 210]) / 255.0  # Convert hex to RGB (0-1)
+    viewer.viewer.set_background_color(background_color)
 
     # Add custom key callback for camera switching
     original_callback = viewer.callback_key_pressed
@@ -258,18 +298,21 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
     if enable_water_surface:
         print("  - Dynamic water surface waves")
 
-    # === ADD OCEAN FLOOR (3x3 GRID) ===
+    # === ADD OCEAN FLOOR (5x5 GRID) ===
     # Load and add a 3x3 grid of ocean floor tiles as environment objects
     # Try package data first, then fall back to project root data directory
+    # Load both sea_floor.obj and sea_floor2.obj for randomization
     try:
-        floor_path = fc.get_data("sea_floor.obj")
-        if not os.path.exists(floor_path):
+        floor_path1 = fc.get_data("sea_floor.obj")
+        floor_path2 = fc.get_data("sea_floor2.obj")
+        if not os.path.exists(floor_path1) or not os.path.exists(floor_path2):
             raise FileNotFoundError
     except:
         # Fall back to project root data directory
         script_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
-        floor_path = os.path.join(project_root, "data", "sea_floor.obj")
+        floor_path1 = os.path.join(project_root, "data", "sea_floor.obj")
+        floor_path2 = os.path.join(project_root, "data", "sea_floor2.obj")
 
     try:
         floor_texture_path = fc.get_data("sandtexture.jpg")
@@ -297,67 +340,71 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
             print(f"Loaded {len(caustics_frames)} caustics frames")
         print("="*50)
 
-    if os.path.exists(floor_path):
+    if os.path.exists(floor_path1) or os.path.exists(floor_path2):
         try:
-            print(f"\nLoading ocean floor grid (3x3) from {floor_path}...")
+            print(f"\nLoading ocean floor meshes for randomized 5x5 grid...")
 
-            # Load the floor mesh once (we'll reuse it for all tiles)
-            [V_floor_base, TC_floor, N_floor, F_floor, FTC_floor, FN_floor] = fcd.readOBJ_tex(floor_path)
-            print(f"  Loaded floor template: {V_floor_base.shape[0]} vertices, {F_floor.shape[0]} faces")
+            # Load both floor meshes
+            floor_mesh1 = load_floor_mesh(floor_path1)
+            floor_mesh2 = load_floor_mesh(floor_path2)
 
-            # Triangulate quads if needed
-            if F_floor.shape[1] == 4:
-                print(f"  Triangulating quad mesh...")
-                num_quads = F_floor.shape[0]
-                F_floor_tri = np.zeros((num_quads * 2, 3), dtype=np.int32)
-                F_floor_tri[0::2, :] = F_floor[:, [0, 1, 2]]
-                F_floor_tri[1::2, :] = F_floor[:, [0, 2, 3]]
-                F_floor = F_floor_tri
+            floor_options = []
+            if floor_mesh1 is not None:
+                V1, F1, TC1, FTC1 = floor_mesh1
+                print(f"  Loaded sea_floor.obj: {V1.shape[0]} vertices, {F1.shape[0]} faces")
+                floor_options.append((V1, F1, TC1, FTC1, "sea_floor.obj"))
+            if floor_mesh2 is not None:
+                V2, F2, TC2, FTC2 = floor_mesh2
+                print(f"  Loaded sea_floor2.obj: {V2.shape[0]} vertices, {F2.shape[0]} faces")
+                floor_options.append((V2, F2, TC2, FTC2, "sea_floor2.obj"))
 
-                if FTC_floor is not None and FTC_floor.shape[1] == 4:
-                    FTC_tri = np.zeros((num_quads * 2, 3), dtype=np.int32)
-                    FTC_tri[0::2, :] = FTC_floor[:, [0, 1, 2]]
-                    FTC_tri[1::2, :] = FTC_floor[:, [0, 2, 3]]
-                    FTC_floor = FTC_tri
-                    print(f"  Triangulated: {F_floor.shape[0]} triangles")
-
-            # Make base arrays contiguous
-            F_floor = np.ascontiguousarray(F_floor, dtype=np.int32)
+            if len(floor_options) == 0:
+                raise Exception("Failed to load any floor meshes")
 
             # Floor tile parameters
             tile_scale = 0.05  # Scale to match fish size
             floor_y_offset = -0.5  # Position just below fish
 
-            # Calculate tile size in world space
-            V_floor_scaled_base = V_floor_base * tile_scale
-            tile_width = V_floor_scaled_base[:, 0].max() - V_floor_scaled_base[:, 0].min()
-            tile_depth = V_floor_scaled_base[:, 2].max() - V_floor_scaled_base[:, 2].min()
+            # Calculate tile size in world space from all loaded meshes (use max for consistent spacing)
+            tile_widths = []
+            tile_depths = []
+            for V_opt, F_opt, TC_opt, FTC_opt, name in floor_options:
+                V_scaled = V_opt * tile_scale
+                tile_widths.append(V_scaled[:, 0].max() - V_scaled[:, 0].min())
+                tile_depths.append(V_scaled[:, 2].max() - V_scaled[:, 2].min())
+
+            tile_width = max(tile_widths)
+            tile_depth = max(tile_depths)
 
             print(f"  Tile dimensions: width={tile_width:.2f}, depth={tile_depth:.2f}")
-            print(f"  Creating 3x3 grid...")
+            print(f"  Creating 5x5 grid (25 tiles) with randomized floor meshes and overlap...")
 
-            # Check texture availability
-            use_texture = (os.path.exists(floor_texture_path) and
-                          TC_floor is not None and FTC_floor is not None and
-                          TC_floor.shape[0] > 0 and FTC_floor.shape[0] > 0)
-
-            if use_texture:
-                TC_contig = np.ascontiguousarray(TC_floor, dtype=np.float64)
-                FTC_contig = np.ascontiguousarray(FTC_floor, dtype=np.int32)
-
-            # Create 3x3 grid of floor tiles
+            # Create 5x5 grid of floor tiles with overlap to hide seams
             num_bones = 16
             num_modes_floor = 16
             floor_tiles = []
 
-            for i in range(3):  # rows (Z direction)
-                for j in range(3):  # columns (X direction)
-                    # Calculate tile offset (centered around origin)
-                    x_offset = (j - 1) * tile_width  # -1, 0, 1 -> left, center, right
-                    z_offset = (i - 1) * tile_depth  # -1, 0, 1 -> back, center, front
+            # Overlap factor: 0.9 means 10% overlap (tiles spaced at 90% of their width/depth)
+            overlap_factor = 0.9  # Adjust this (0.85-0.95) to control overlap amount
+            tile_spacing_x = tile_width * overlap_factor
+            tile_spacing_z = tile_depth * overlap_factor
 
-                    # Create translated copy of vertices
-                    V_floor_tile = V_floor_scaled_base.copy()
+            # Random seed for reproducibility (optional - remove for different patterns each run)
+            random.seed(42)
+
+            for i in range(5):  # rows (Z direction) - 5 rows
+                for j in range(5):  # columns (X direction) - 5 columns
+                    # Randomly select which floor mesh to use for this tile
+                    V_floor_base, F_floor, TC_floor, FTC_floor, mesh_name = random.choice(floor_options)
+
+                    # Calculate tile offset (centered around origin)
+                    # For 5x5: indices 0-4, center at 2, so offset = (j - 2) and (i - 2)
+                    x_offset = (j - 2) * tile_spacing_x  # -2, -1, 0, 1, 2 -> left to right
+                    z_offset = (i - 2) * tile_spacing_z  # -2, -1, 0, 1, 2 -> back to front
+
+                    # Scale and translate vertices
+                    V_floor_scaled = V_floor_base * tile_scale
+                    V_floor_tile = V_floor_scaled.copy()
                     V_floor_tile[:, 0] += x_offset
                     V_floor_tile[:, 1] += floor_y_offset
                     V_floor_tile[:, 2] += z_offset
@@ -367,22 +414,16 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
                     floor_id = viewer.viewer.add_mesh()
                     viewer.viewer.set_mesh(V_floor_tile, F_floor, floor_id)
 
-                    # Set texture if available
+                    # Set texture if available - always use floor texture, caustics overlay in shader
+                    use_texture = (os.path.exists(floor_texture_path) and
+                                  TC_floor is not None and FTC_floor is not None and
+                                  TC_floor.shape[0] > 0 and FTC_floor.shape[0] > 0)
                     if use_texture:
                         try:
-                            # Use caustics texture if enabled, otherwise use floor texture
-                            texture_to_use = caustics_frames[0] if enable_caustics and caustics_frames else floor_texture_path
-                            viewer.viewer.set_texture(texture_to_use, TC_contig, FTC_contig, floor_id)
-
-                            # Store caustics animation data if enabled
-                            if enable_caustics and caustics_frames:
-                                caustics_data_ref[0][floor_id] = {
-                                    'num_frames': len(caustics_frames),
-                                    'frame_rate': 2.0,  # Change frame every 2 steps
-                                    'caustics_frames': caustics_frames,
-                                    'TC': TC_contig,
-                                    'FTC': FTC_contig
-                                }
+                            TC_contig = np.ascontiguousarray(TC_floor, dtype=np.float64)
+                            FTC_contig = np.ascontiguousarray(FTC_floor, dtype=np.int32)
+                            # Always use floor texture - caustics will be overlaid in shader
+                            viewer.viewer.set_texture(floor_texture_path, TC_contig, FTC_contig, floor_id)
                         except Exception as e:
                             print(f"  Warning: Could not apply texture to tile ({i},{j}): {e}")
 
@@ -418,9 +459,9 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
                     # Store floor ID and transforms
                     floor_ids_ref[0].append(floor_id)
                     floor_transforms_ref[0][floor_id] = (p0_floor, z0_floor)
-                    floor_tiles.append((floor_id, i, j, x_offset, z_offset))
+                    floor_tiles.append((floor_id, i, j, x_offset, z_offset, mesh_name))
 
-                    print(f"  Tile ({i},{j}): mesh ID {floor_id}, offset=({x_offset:.2f}, {z_offset:.2f})")
+                    print(f"  Tile ({i},{j}): mesh ID {floor_id}, offset=({x_offset:.2f}, {z_offset:.2f}), mesh={mesh_name}")
 
             print(f"\n  Floor grid loaded successfully: {len(floor_tiles)} tiles")
             if enable_caustics and caustics_frames:
@@ -689,8 +730,12 @@ def interactive_cd_affine_handle_with_caustics(msh_file=None, V=None, T=None, Ws
          step += 1
 
     viewer = fc.viewers.interactive_handle_subspace_viewer(V, T, Wp, Ws,  pre_draw_callback,T0=T0,
-                                                  texture_png=texture_png, texture_obj=texture_obj,
-                                                  t0=to, s0=so, init_guizmo=True)
+                                                 texture_png=texture_png, texture_obj=texture_obj,
+                                                 t0=to, s0=so, init_guizmo=True)
+
+    # Set background color to #5FBFD2 (ocean blue/cyan)
+    background_color = np.array([95, 191, 210]) / 255.0  # Convert hex to RGB (0-1)
+    viewer.viewer.set_background_color(background_color)
 
     # Add custom key callback for camera switching
     original_callback = viewer.callback_key_pressed
@@ -711,50 +756,61 @@ def interactive_cd_affine_handle_with_caustics(msh_file=None, V=None, T=None, Ws
     viewer.viewer.set_key_callback(custom_key_callback)
     print("  v        Toggle Camera View (Third-person / First-person)")
 
-    # === ADD OCEAN FLOOR WITH CAUSTICS (3x3 GRID) ===
+    # === ADD OCEAN FLOOR WITH CAUSTICS (5x5 GRID) ===
     # Load caustics atlas using fc.get_data() for proper path resolution
-    floor_path = fc.get_data("sea_floor.obj")
+    try:
+        floor_path1 = fc.get_data("sea_floor.obj")
+        floor_path2 = fc.get_data("sea_floor2.obj")
+        if not os.path.exists(floor_path1) or not os.path.exists(floor_path2):
+            raise FileNotFoundError
+    except:
+        # Fall back to project root data directory
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
+        floor_path1 = os.path.join(project_root, "data", "sea_floor.obj")
+        floor_path2 = os.path.join(project_root, "data", "sea_floor2.obj")
+
     floor_texture_path = fc.get_data("sandtexture.jpg")
     caustics_atlas_path = fc.get_data("caustics/caustics_atlas.png")
 
-    if os.path.exists(floor_path):
+    if os.path.exists(floor_path1) or os.path.exists(floor_path2):
         try:
-            print(f"\nLoading ocean floor grid (3x3) with animated caustics from {floor_path}...")
+            print(f"\nLoading ocean floor meshes for randomized 5x5 grid with animated caustics...")
 
-            # Load the floor mesh once (we'll reuse it for all tiles)
-            [V_floor_base, TC_floor, N_floor, F_floor, FTC_floor, FN_floor] = fcd.readOBJ_tex(floor_path)
-            print(f"  Loaded floor template: {V_floor_base.shape[0]} vertices, {F_floor.shape[0]} faces")
+            # Load both floor meshes
+            floor_mesh1 = load_floor_mesh(floor_path1)
+            floor_mesh2 = load_floor_mesh(floor_path2)
 
-            # Triangulate quads if needed
-            if F_floor.shape[1] == 4:
-                print(f"  Triangulating quad mesh...")
-                num_quads = F_floor.shape[0]
-                F_floor_tri = np.zeros((num_quads * 2, 3), dtype=np.int32)
-                F_floor_tri[0::2, :] = F_floor[:, [0, 1, 2]]
-                F_floor_tri[1::2, :] = F_floor[:, [0, 2, 3]]
-                F_floor = F_floor_tri
+            floor_options = []
+            if floor_mesh1 is not None:
+                V1, F1, TC1, FTC1 = floor_mesh1
+                print(f"  Loaded sea_floor.obj: {V1.shape[0]} vertices, {F1.shape[0]} faces")
+                floor_options.append((V1, F1, TC1, FTC1, "sea_floor.obj"))
+            if floor_mesh2 is not None:
+                V2, F2, TC2, FTC2 = floor_mesh2
+                print(f"  Loaded sea_floor2.obj: {V2.shape[0]} vertices, {F2.shape[0]} faces")
+                floor_options.append((V2, F2, TC2, FTC2, "sea_floor2.obj"))
 
-                if FTC_floor is not None and FTC_floor.shape[1] == 4:
-                    FTC_tri = np.zeros((num_quads * 2, 3), dtype=np.int32)
-                    FTC_tri[0::2, :] = FTC_floor[:, [0, 1, 2]]
-                    FTC_tri[1::2, :] = FTC_floor[:, [0, 2, 3]]
-                    FTC_floor = FTC_tri
-                    print(f"  Triangulated: {F_floor.shape[0]} triangles")
-
-            # Make base arrays contiguous
-            F_floor = np.ascontiguousarray(F_floor, dtype=np.int32)
+            if len(floor_options) == 0:
+                raise Exception("Failed to load any floor meshes")
 
             # Floor tile parameters
             tile_scale = 0.05  # Scale to match fish size
             floor_y_offset = -0.5  # Position just below fish
 
-            # Calculate tile size in world space
-            V_floor_scaled_base = V_floor_base * tile_scale
-            tile_width = V_floor_scaled_base[:, 0].max() - V_floor_scaled_base[:, 0].min()
-            tile_depth = V_floor_scaled_base[:, 2].max() - V_floor_scaled_base[:, 2].min()
+            # Calculate tile size in world space from all loaded meshes (use max for consistent spacing)
+            tile_widths = []
+            tile_depths = []
+            for V_opt, F_opt, TC_opt, FTC_opt, name in floor_options:
+                V_scaled = V_opt * tile_scale
+                tile_widths.append(V_scaled[:, 0].max() - V_scaled[:, 0].min())
+                tile_depths.append(V_scaled[:, 2].max() - V_scaled[:, 2].min())
+
+            tile_width = max(tile_widths)
+            tile_depth = max(tile_depths)
 
             print(f"  Tile dimensions: width={tile_width:.2f}, depth={tile_depth:.2f}")
-            print(f"  Creating 3x3 grid with animated caustics...")
+            print(f"  Creating 5x5 grid (25 tiles) with randomized floor meshes, animated caustics and overlap...")
 
             # Check if caustics atlas exists
             use_caustics = os.path.exists(caustics_atlas_path)
@@ -766,27 +822,32 @@ def interactive_cd_affine_handle_with_caustics(msh_file=None, V=None, T=None, Ws
                 print(f"  Warning: Caustics atlas not found at {caustics_atlas_path}")
                 print(f"  Falling back to static floor texture")
 
-            # Check texture availability
-            use_texture = (TC_floor is not None and FTC_floor is not None and
-                          TC_floor.shape[0] > 0 and FTC_floor.shape[0] > 0)
-
-            if use_texture:
-                TC_contig = np.ascontiguousarray(TC_floor, dtype=np.float64)
-                FTC_contig = np.ascontiguousarray(FTC_floor, dtype=np.int32)
-
-            # Create 3x3 grid of floor tiles
+            # Create 5x5 grid of floor tiles with overlap to hide seams
             num_bones = 16
             num_modes_floor = 16
             floor_tiles = []
 
-            for i in range(3):  # rows (Z direction)
-                for j in range(3):  # columns (X direction)
-                    # Calculate tile offset (centered around origin)
-                    x_offset = (j - 1) * tile_width  # -1, 0, 1 -> left, center, right
-                    z_offset = (i - 1) * tile_depth  # -1, 0, 1 -> back, center, front
+            # Overlap factor: 0.9 means 10% overlap (tiles spaced at 90% of their width/depth)
+            overlap_factor = 0.9  # Adjust this (0.85-0.95) to control overlap amount
+            tile_spacing_x = tile_width * overlap_factor
+            tile_spacing_z = tile_depth * overlap_factor
 
-                    # Create translated copy of vertices
-                    V_floor_tile = V_floor_scaled_base.copy()
+            # Random seed for reproducibility (optional - remove for different patterns each run)
+            random.seed(42)
+
+            for i in range(5):  # rows (Z direction) - 5 rows
+                for j in range(5):  # columns (X direction) - 5 columns
+                    # Randomly select which floor mesh to use for this tile
+                    V_floor_base, F_floor, TC_floor, FTC_floor, mesh_name = random.choice(floor_options)
+
+                    # Calculate tile offset (centered around origin)
+                    # For 5x5: indices 0-4, center at 2, so offset = (j - 2) and (i - 2)
+                    x_offset = (j - 2) * tile_spacing_x  # -2, -1, 0, 1, 2 -> left to right
+                    z_offset = (i - 2) * tile_spacing_z  # -2, -1, 0, 1, 2 -> back to front
+
+                    # Scale and translate vertices
+                    V_floor_scaled = V_floor_base * tile_scale
+                    V_floor_tile = V_floor_scaled.copy()
                     V_floor_tile[:, 0] += x_offset
                     V_floor_tile[:, 1] += floor_y_offset
                     V_floor_tile[:, 2] += z_offset
@@ -796,25 +857,19 @@ def interactive_cd_affine_handle_with_caustics(msh_file=None, V=None, T=None, Ws
                     floor_id = viewer.viewer.add_mesh()
                     viewer.viewer.set_mesh(V_floor_tile, F_floor, floor_id)
 
-                    # Set caustics texture if available, otherwise use default
+                    # Always use floor texture - caustics will be overlaid in shader
+                    use_texture = (os.path.exists(floor_texture_path) and
+                                  TC_floor is not None and FTC_floor is not None and
+                                  TC_floor.shape[0] > 0 and FTC_floor.shape[0] > 0)
                     if use_texture:
                         try:
-                            texture_path = caustics_atlas_path if use_caustics else floor_texture_path
-                            if not os.path.exists(texture_path):
-                                # Fallback: create simple sandy color if no texture found
-                                texture_path = None
-
-                            if texture_path:
-                                viewer.viewer.set_texture(texture_path, TC_contig, FTC_contig, floor_id)
-
-                                # Store caustics animation data for this tile
-                                if use_caustics:
-                                    caustics_data_ref[0][floor_id] = {
-                                        'num_frames': caustics_num_frames,
-                                        'frame_rate': caustics_frame_rate,
-                                        'TC_base': TC_floor.copy(),
-                                        'FTC': FTC_floor.copy()
-                                    }
+                            TC_contig = np.ascontiguousarray(TC_floor, dtype=np.float64)
+                            FTC_contig = np.ascontiguousarray(FTC_floor, dtype=np.int32)
+                            # Always use floor texture, caustics overlay handled in shader
+                            if os.path.exists(floor_texture_path):
+                                viewer.viewer.set_texture(floor_texture_path, TC_contig, FTC_contig, floor_id)
+                            else:
+                                print(f"  Warning: Floor texture not found at {floor_texture_path}")
                         except Exception as e:
                             print(f"  Warning: Could not apply texture to tile ({i},{j}): {e}")
 
@@ -850,13 +905,15 @@ def interactive_cd_affine_handle_with_caustics(msh_file=None, V=None, T=None, Ws
                     # Store floor ID and transforms
                     floor_ids_ref[0].append(floor_id)
                     floor_transforms_ref[0][floor_id] = (p0_floor, z0_floor)
-                    floor_tiles.append((floor_id, i, j, x_offset, z_offset))
+                    floor_tiles.append((floor_id, i, j, x_offset, z_offset, mesh_name))
 
-                    print(f"  Tile ({i},{j}): mesh ID {floor_id}, offset=({x_offset:.2f}, {z_offset:.2f})")
+                    print(f"  Tile ({i},{j}): mesh ID {floor_id}, offset=({x_offset:.2f}, {z_offset:.2f}), mesh={mesh_name}")
 
             print(f"\n  Floor grid loaded successfully: {len(floor_tiles)} tiles")
+            # Check if caustics atlas exists
+            use_caustics = os.path.exists(caustics_atlas_path)
             if use_caustics:
-                print(f"  Animated caustics enabled ({caustics_num_frames} frames)")
+                print(f"  Animated caustics enabled (16 frames)")
             print(f"  Floor tiles are static environment objects (not controlled by affine handle)")
 
         except Exception as e:
@@ -865,9 +922,38 @@ def interactive_cd_affine_handle_with_caustics(msh_file=None, V=None, T=None, Ws
             traceback.print_exc()
             print("  Continuing without floor...")
     else:
-        print(f"Floor file not found: {floor_path}")
+        print(f"Floor files not found: {floor_path1} or {floor_path2}")
         print("Continuing without floor...")
     # =======================
 
-    viewer.launch()
+    # Set up caustics atlas as overlay texture if enabled
+    if enable_caustics:
+        caustics_atlas_path = fc.get_data("caustics/caustics_atlas.png")
+        if os.path.exists(caustics_atlas_path):
+            try:
+                # Set up caustics atlas as separate texture overlay
+                if hasattr(viewer.viewer, 'set_caustics_atlas'):
+                    viewer.viewer.set_caustics_atlas(caustics_atlas_path)
+                    print(f"  Caustics atlas loaded: {caustics_atlas_path}")
 
+                    # Set shader uniforms for caustics animation
+                    # Set for ALL meshes (fish + floor) so caustics work on everything
+                    if hasattr(viewer.viewer, 'set_uniform'):
+                        # Get all mesh IDs (fish is 0, plus all floor meshes)
+                        all_mesh_ids = [0]  # Fish mesh (always ID 0)
+                        # Add all floor mesh IDs
+                        all_mesh_ids.extend(floor_ids_ref[0])
+
+                        # Set caustics uniforms for all meshes
+                        for mesh_id in all_mesh_ids:
+                            viewer.viewer.set_uniform("u_numFrames", 16, mesh_id)  # Number of frames in atlas
+                            viewer.viewer.set_uniform("u_frameRate", 12.0, mesh_id)  # Animation frame rate
+                        print(f"  Caustics shader uniforms configured for {len(all_mesh_ids)} meshes (fish + floor)")
+                else:
+                    print("  Warning: set_caustics_atlas method not available")
+            except Exception as e:
+                print(f"  Warning: Failed to set up caustics atlas: {e}")
+        else:
+            print(f"  Warning: Caustics atlas not found at {caustics_atlas_path}")
+
+    viewer.launch()

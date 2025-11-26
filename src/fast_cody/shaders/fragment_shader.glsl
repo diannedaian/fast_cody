@@ -58,34 +58,54 @@ uniform float specular_exponent;
         vec4 finalColor = mix(vec4(1,1,1,1), texture(tex, texcoordi), texture_factor) * color;
 
         // ANIMATED CAUSTICS: Sample caustics atlas with frame-based animation
-        // Integrate caustics as brightness multiplier for underwater shimmering effect
-        vec2 localUV = v_worldPos.xz * 0.15;
+        // Atlas is 4096x256 (16 frames of 256x256 each, arranged horizontally)
+        // Use mesh texture coordinates to preserve organic caustic patterns
 
-        // Make caustics drift slowly over time
-        // TUNE THESE VALUES to adjust drift speed:
-        // - Increase values (e.g., 0.5, 1.0) for faster/more visible drift
-        // - Decrease values (e.g., 0.05, 0.03) for slower/subtle drift
-        localUV += vec2(
-            u_time * 0.30,     // horizontal flow (was 0.10 - increased for visibility)
-            u_time * 0.20      // vertical flow (was 0.07 - increased for visibility)
+        // Base UV from mesh texture coordinates - this preserves the organic pattern
+        // Scale to control how many times the pattern repeats across the surface
+        float tileScale = 2.0;  // Higher = more repeats, lower = larger patterns (1.0-4.0 range)
+        vec2 baseUV = texcoordi * tileScale;
+
+        // Add time-based drift for flowing effect
+        vec2 drift = vec2(
+            u_time * 0.15,  // Horizontal drift
+            u_time * 0.10   // Vertical drift
         );
 
-        // Add gentle wobble for more realistic underwater light (simulates water surface refraction)
-        // TUNE THESE VALUES to adjust wobble:
-        // - Increase amplitude (0.03 -> 0.1) for more wobble
-        // - Increase frequency (0.6 -> 1.2) for faster wobble
-        localUV += vec2(
-            sin(u_time * 0.8) * 0.08,   // horizontal wobble (was 0.6 * 0.03 - increased)
-            cos(u_time * 0.6) * 0.08   // vertical wobble (was 0.4 * 0.03 - increased)
+        // Add subtle organic wobble for realistic water surface movement
+        // Use world position for wobble variation to avoid obvious tiling
+        vec2 wobble = vec2(
+            sin(u_time * 0.5 + v_worldPos.x * 0.2) * 0.02,  // Subtle position-dependent wobble
+            cos(u_time * 0.4 + v_worldPos.z * 0.2) * 0.02
         );
 
+        // Combine and wrap with fract to create seamless tiling
+        vec2 tiledUV = fract(baseUV + drift + wobble);
+
+        // Select current frame (0-15) based on time for animation
         int frame = int(floor(u_time * u_frameRate)) % u_numFrames;
-        float frameU = (localUV.x + float(frame)) / float(u_numFrames);
-        vec2 uv = vec2(frameU, localUV.y);
-        float C = texture(u_causticsAtlas, uv).r;
 
-        // Apply caustics to brighten surfaces (underwater shimmering patches)
-        finalColor.rgb *= 1.0 + C * 0.45;
+        // Calculate final UV coordinates
+        // X: frame offset (which 256-wide slice) + tiled UV within that frame
+        // Y: use tiled UV directly (atlas is full height)
+        float frameOffset = float(frame) / float(u_numFrames);  // 0, 1/16, 2/16, ..., 15/16
+        float frameWidth = 1.0 / float(u_numFrames);  // Width of one frame in normalized coords (1/16)
+        vec2 uv = vec2(frameOffset + tiledUV.x * frameWidth, tiledUV.y);
+        vec4 causticsSample = texture(u_causticsAtlas, uv);
+        float C = causticsSample.r;  // Use red channel for caustics intensity
+
+        // Apply caustics: bright areas add light, dark areas cast shadows
+        // C is in range [0, 1] where 0 = black (shadow), 1 = white (bright light)
+
+        // Bright areas: add light (multiplicative + additive for realistic light)
+        float brightIntensity = max(0.0, C - 0.3);  // Only bright areas (above 0.3)
+        brightIntensity = smoothstep(0.0, 1.0, brightIntensity);  // Smooth transition
+        finalColor.rgb += brightIntensity * 0.5;  // Additive light in bright areas
+
+        // Dark areas: cast shadows (reduce brightness)
+        float shadowIntensity = max(0.0, 0.3 - C);  // Only dark areas (below 0.3)
+        shadowIntensity = smoothstep(0.0, 1.0, shadowIntensity);  // Smooth transition
+        finalColor.rgb *= 1.0 - shadowIntensity * 0.2;  // Darken shadow areas (max 20% darker)
 
         // Depth-based attenuation: darker at lower Y (deeper), brighter at higher Y (shallower)
         float atten = clamp(exp(-v_worldPos.y * 0.3), 0.2, 1.0);
