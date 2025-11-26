@@ -14,7 +14,8 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
                                  num_modes=16, num_clusters=100,
                                  constraint_enforcement="optimal",
                                  cache_dir=None, results_dir=None, read_cache=False,
-                                 texture_png=None, texture_obj=None):
+                                 texture_png=None, texture_obj=None, enable_caustics=False,
+                                 enable_water_surface=False):
     """
     Runs a standard interactive fast CD simulation, where the user can manipulate a single affine
     handle with a Guizmo and observe secondary effects in real-time.
@@ -48,12 +49,17 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
     texture_png : str
         directory pointing towards a .png file of the surface texture.
         if None and if texture_obj is None, then no texturing is applied.
+    enable_caustics : bool
+        if True, adds animated caustics light patterns on the ocean floor (default=False)
+    enable_water_surface : bool
+        if True, adds an animated water surface geometry above the scene (default=False)
 
 
     Examples
     --------
     >>> import fast_cody as fcd
     >>> fcd.apps.interactive_cd_affine_handle()
+    >>> fcd.apps.interactive_cd_affine_handle(enable_caustics=True, enable_water_surface=True)
     """
 
     if msh_file is not None:
@@ -100,6 +106,8 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
     step = 0
     floor_ids_ref = [[]]  # List of floor tile IDs
     floor_transforms_ref = [{}]  # Dictionary mapping floor_id -> (p0, z0)
+    caustics_data_ref = [{}]  # Dictionary for caustics animation data
+    water_surface_id_ref = [None]  # ID for water surface mesh
     camera_mode = ['third_person']  # 'third_person' or 'first_person'
     current_fish_pos = [np.array([0.0, 0.0, 0.0])]  # Store just the fish position (updated each frame)
 
@@ -164,12 +172,54 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
          # U = np.reshape(J @ p + B @ z, (J.shape[0]//3, 3), order="F") # full positions
          viewer.update_subspace_coefficients(z, p)
 
-         # Update all floor tiles with static identity transforms
+         # Update all floor tiles
          for floor_id in floor_ids_ref[0]:
              if floor_id in floor_transforms_ref[0]:
                  p0_floor, z0_floor = floor_transforms_ref[0][floor_id]
+
+                 # Animate caustics if enabled
+                 if enable_caustics and floor_id in caustics_data_ref[0]:
+                     caustics_info = caustics_data_ref[0][floor_id]
+                     num_frames = caustics_info['num_frames']
+                     frame_rate = caustics_info['frame_rate']
+                     caustics_frames = caustics_info['caustics_frames']
+                     TC = caustics_info['TC']
+                     FTC = caustics_info['FTC']
+
+                     # Calculate current frame
+                     current_frame = int((step / frame_rate) % num_frames)
+
+                     # Reload texture with current caustics frame
+                     viewer.viewer.set_texture(caustics_frames[current_frame], TC, FTC, floor_id)
+
                  viewer.viewer.set_bone_transforms(p0_floor, z0_floor, floor_id)
                  viewer.viewer.updateGL(floor_id)
+
+         # Animate water surface if enabled
+         if enable_water_surface and water_surface_id_ref[0] is not None:
+             water_id = water_surface_id_ref[0]
+             water_info = caustics_data_ref[0].get('water_surface', None)
+             if water_info is not None:
+                 V_water_base = water_info['V_base']
+
+                 # Create wave animation
+                 time = step * 0.05
+                 V_water_animated = V_water_base.copy()
+
+                 # Apply sinusoidal waves
+                 for i in range(V_water_animated.shape[0]):
+                     x, y, z = V_water_animated[i, :]
+                     # Multiple wave frequencies for realistic ocean surface
+                     wave1 = 0.02 * np.sin(2.0 * x + time * 2.0) * np.cos(2.0 * z + time * 1.5)
+                     wave2 = 0.015 * np.sin(3.5 * x - time * 1.5) * np.cos(1.5 * z - time * 2.0)
+                     wave3 = 0.01 * np.sin(5.0 * x + 2.0 * z + time * 3.0)
+                     V_water_animated[i, 1] += wave1 + wave2 + wave3
+
+                 # Update the water surface mesh
+                 V_water_contig = np.ascontiguousarray(V_water_animated, dtype=np.float64)
+                 F_water_contig = np.ascontiguousarray(water_info['F'], dtype=np.int32)
+                 viewer.viewer.set_mesh(V_water_contig, F_water_contig, water_id)
+                 viewer.viewer.updateGL(water_id)
 
          # Update camera based on current mode
          if camera_mode[0] == 'first_person':
@@ -202,13 +252,50 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
     viewer.viewer.set_key_callback(custom_key_callback)
     print("  v        Toggle Camera View (Third-person / First-person)")
 
+    if enable_caustics:
+        print("\n  Water Effects:")
+        print("  - Animated caustics light patterns on ocean floor")
+    if enable_water_surface:
+        print("  - Dynamic water surface waves")
+
     # === ADD OCEAN FLOOR (3x3 GRID) ===
-    # Load and add a 3x3 grid of static ocean floor tiles as environment objects
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
-    data_dir = os.path.join(project_root, "data")
-    floor_path = os.path.join(data_dir, "sea_floor.obj")
-    floor_texture_path = os.path.join(data_dir, "sandtexture.jpg")
+    # Load and add a 3x3 grid of ocean floor tiles as environment objects
+    # Try package data first, then fall back to project root data directory
+    try:
+        floor_path = fc.get_data("sea_floor.obj")
+        if not os.path.exists(floor_path):
+            raise FileNotFoundError
+    except:
+        # Fall back to project root data directory
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
+        floor_path = os.path.join(project_root, "data", "sea_floor.obj")
+
+    try:
+        floor_texture_path = fc.get_data("sandtexture.jpg")
+        if not os.path.exists(floor_texture_path):
+            raise FileNotFoundError
+    except:
+        # Fall back to project root data directory
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
+        floor_texture_path = os.path.join(project_root, "data", "sandtexture.jpg")
+
+    # Load caustics frames if caustics enabled
+    caustics_frames = []
+    if enable_caustics:
+        print("\n=== Loading Caustics Frames ===")
+        for i in range(1, 17):  # 16 frames
+            caustics_frame_path = fc.get_data(f"caustics/caust_{i:03d}.png")
+            if os.path.exists(caustics_frame_path):
+                caustics_frames.append(caustics_frame_path)
+            else:
+                print(f"Warning: Caustics frame {i} not found at {caustics_frame_path}")
+                enable_caustics = False
+                break
+        if caustics_frames:
+            print(f"Loaded {len(caustics_frames)} caustics frames")
+        print("="*50)
 
     if os.path.exists(floor_path):
         try:
@@ -283,7 +370,19 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
                     # Set texture if available
                     if use_texture:
                         try:
-                            viewer.viewer.set_texture(floor_texture_path, TC_contig, FTC_contig, floor_id)
+                            # Use caustics texture if enabled, otherwise use floor texture
+                            texture_to_use = caustics_frames[0] if enable_caustics and caustics_frames else floor_texture_path
+                            viewer.viewer.set_texture(texture_to_use, TC_contig, FTC_contig, floor_id)
+
+                            # Store caustics animation data if enabled
+                            if enable_caustics and caustics_frames:
+                                caustics_data_ref[0][floor_id] = {
+                                    'num_frames': len(caustics_frames),
+                                    'frame_rate': 2.0,  # Change frame every 2 steps
+                                    'caustics_frames': caustics_frames,
+                                    'TC': TC_contig,
+                                    'FTC': FTC_contig
+                                }
                         except Exception as e:
                             print(f"  Warning: Could not apply texture to tile ({i},{j}): {e}")
 
@@ -324,6 +423,440 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
                     print(f"  Tile ({i},{j}): mesh ID {floor_id}, offset=({x_offset:.2f}, {z_offset:.2f})")
 
             print(f"\n  Floor grid loaded successfully: {len(floor_tiles)} tiles")
+            if enable_caustics and caustics_frames:
+                print(f"  Animated caustics enabled ({len(caustics_frames)} frames)")
+            print(f"  Floor tiles are static environment objects (not controlled by affine handle)")
+
+        except Exception as e:
+            print(f"ERROR: Failed to load ocean floor: {e}")
+            import traceback
+            traceback.print_exc()
+            print("  Continuing without floor...")
+    else:
+        print(f"Floor file not found: {floor_path}")
+        print("Continuing without floor...")
+    # =======================
+
+    # === ADD DYNAMIC WATER SURFACE ===
+    if enable_water_surface:
+        try:
+            print("\n=== Adding Dynamic Water Surface ===")
+
+            # Create a grid mesh for the water surface
+            grid_size = 50  # Number of vertices per side
+            water_extent = 5.0  # Size in world units
+            water_y = 1.0  # Height above origin
+
+            # Generate grid vertices
+            x_vals = np.linspace(-water_extent, water_extent, grid_size)
+            z_vals = np.linspace(-water_extent, water_extent, grid_size)
+            xx, zz = np.meshgrid(x_vals, z_vals)
+
+            V_water = np.zeros((grid_size * grid_size, 3), dtype=np.float64)
+            V_water[:, 0] = xx.flatten()
+            V_water[:, 1] = water_y
+            V_water[:, 2] = zz.flatten()
+
+            # Generate grid faces (triangles)
+            F_water = []
+            for i in range(grid_size - 1):
+                for j in range(grid_size - 1):
+                    idx = i * grid_size + j
+                    # Two triangles per quad
+                    F_water.append([idx, idx + 1, idx + grid_size])
+                    F_water.append([idx + 1, idx + grid_size + 1, idx + grid_size])
+            F_water = np.array(F_water, dtype=np.int32)
+
+            # Add water surface mesh
+            water_id = viewer.viewer.add_mesh()
+            V_water_contig = np.ascontiguousarray(V_water, dtype=np.float64)
+            F_water_contig = np.ascontiguousarray(F_water, dtype=np.int32)
+            viewer.viewer.set_mesh(V_water_contig, F_water_contig, water_id)
+
+            # Set water appearance (semi-transparent blue)
+            water_color = np.array([0.1, 0.4, 0.7])  # Blue-ish color
+            viewer.viewer.set_color(water_color, water_id)
+            viewer.viewer.set_face_based(False, water_id)
+            viewer.viewer.set_show_lines(True, water_id)  # Show grid lines for water
+
+            # Set weights for water surface
+            num_verts_water = V_water.shape[0]
+            num_bones = 16
+            num_modes_water = 16
+            Wp_water = np.zeros((num_verts_water, num_bones), dtype=np.float64)
+            Wp_water[:, 0] = 1.0
+            Ws_water = np.zeros((num_verts_water, num_modes_water), dtype=np.float64)
+            viewer.viewer.set_weights(Wp_water, Ws_water, water_id)
+
+            # Initialize bone transforms
+            p0_water = np.zeros((num_bones * 12, 1), dtype=np.float64)
+            for bone_idx in range(num_bones):
+                base_idx = bone_idx * 12
+                p0_water[base_idx + 0] = 1.0
+                p0_water[base_idx + 5] = 1.0
+                p0_water[base_idx + 10] = 1.0
+            z0_water = np.zeros((num_modes_water * 12, 1), dtype=np.float64)
+            viewer.viewer.set_bone_transforms(p0_water, z0_water, water_id)
+
+            # Store water surface data
+            water_surface_id_ref[0] = water_id
+            caustics_data_ref[0]['water_surface'] = {
+                'V_base': V_water.copy(),
+                'F': F_water.copy()
+            }
+
+            print(f"  Water surface mesh created: {V_water.shape[0]} vertices, {F_water.shape[0]} faces")
+            print(f"  Grid size: {grid_size}x{grid_size}, extent: {water_extent*2:.1f} units")
+            print("="*50)
+
+        except Exception as e:
+            print(f"ERROR: Failed to create water surface: {e}")
+            import traceback
+            traceback.print_exc()
+            enable_water_surface = False
+    # =======================
+
+    viewer.launch()
+
+
+def interactive_cd_affine_handle_with_caustics(msh_file=None, V=None, T=None, Ws=None, l=None, mu=1e4, rho=1e3,
+                                 num_modes=16, num_clusters=100,
+                                 constraint_enforcement="optimal",
+                                 cache_dir=None, results_dir=None, read_cache=False,
+                                 texture_png=None, texture_obj=None):
+    """
+    Runs an interactive fast CD simulation with animated water caustics effect on the floor.
+
+    This version adds dynamic caustics lighting that simulates light refracting through
+    a water surface, creating the illusion of swimming underwater without full water simulation.
+
+    Parameters are identical to interactive_cd_affine_handle().
+    """
+
+    if msh_file is not None:
+        [V, F, T] = fcd.readMSH(msh_file)
+    elif msh_file is None and (V is None and T is None):
+        msh_file = fc.get_data("./cd_fish.msh")
+        [V, F, T] = fcd.readMSH(msh_file)
+    else:
+        assert(V is not None and T is not None and "Must provide either msh_file or V and T")
+
+    if texture_png is None or texture_obj is None:
+        if msh_file ==  fc.get_data("./cd_fish.msh"):
+            texture_png = fc.get_data("./cd_fish_tex.png")
+            texture_obj = fc.get_data("./cd_fish_tex.obj")
+
+    if cache_dir is None:
+        cache_dir = "./cache/"
+    os.makedirs(cache_dir, exist_ok=True)
+
+    [V, so, to] = fcd.scale_and_center_geometry(V, 1, np.array([[0, 0,  0.]])) #center to unit height and about origin
+
+    Wp = np.ones((V.shape[0], 1)) #single handle skinning weight
+    J = fc.lbs_jacobian(V, Wp)
+
+
+    if Ws is None or l is None:
+        C = fc.complementary_constraint_matrix(V, T, J, dt=1e-3)
+        C2 = fc.lbs_weight_space_constraint(V, C)
+        [B, l, Ws] = fc.skinning_subspace(V, T, num_modes, num_clusters, C=C2, read_cache=read_cache,
+                                         cache_dir=cache_dir, constraint_enforcement=constraint_enforcement);
+    else:
+        assert (Ws is not None and l is not None and "Secondary skinning weights and clusters need both be specified")
+        num_modes = Ws.shape[1]
+        num_clusters = l.max() + 1
+
+    sim = fc.fast_cd_sim(V, T, B, l, J, mu=mu, rho=rho, h=1e-2, cache_dir=cache_dir, read_cache=read_cache)
+
+    # set sim state and initial rig parameters
+    z0 = np.zeros((num_modes*12, 1))
+    T0 = np.identity(4).astype( dtype=np.float32, order="F");
+    p0 = T0[0:3, :].reshape((12, 1))
+    st = fc.fast_cd_state(z0, p0)
+
+    step = 0
+    floor_ids_ref = [[]]  # List of floor tile IDs
+    floor_transforms_ref = [{}]  # Dictionary mapping floor_id -> (p0, z0)
+    caustics_data_ref = [{}]  # Dictionary mapping floor_id -> caustics animation data
+    camera_mode = ['third_person']  # 'third_person' or 'first_person'
+    current_fish_pos = [np.array([0.0, 0.0, 0.0])]  # Store just the fish position (updated each frame)
+
+    # Camera update functions
+    def update_third_person_camera():
+        """Static third-person camera above the floor"""
+        camera_eye = np.array([[0.0, 2.5, 5.0]])  # Above and behind (row vector)
+        camera_center = np.array([[0.0, 0.0, 0.0]])  # Look at origin (row vector)
+
+        viewer.viewer.set_camera_eye(camera_eye)
+        viewer.viewer.set_camera_center(camera_center)
+
+    def update_first_person_camera():
+        """Camera that follows behind and above the fish"""
+        # Get the fish position - simple position tracking only
+        fish_pos = current_fish_pos[0]
+
+        # Debug: print fish position every 30 frames
+        if step % 30 == 0:
+            print(f"\n=== Fish Position Debug (step {step}) ===")
+            print(f"Fish position: [{fish_pos[0]:.3f}, {fish_pos[1]:.3f}, {fish_pos[2]:.3f}]")
+
+        # Camera follows with fixed world-space offset (behind and above)
+        camera_offset_x = 0.0      # No X offset
+        camera_offset_y = 1.5      # Height above fish
+        camera_offset_z = -3.0     # Behind the fish in world space
+
+        camera_eye = np.array([
+            fish_pos[0] + camera_offset_x,
+            fish_pos[1] + camera_offset_y,
+            fish_pos[2] + camera_offset_z
+        ])
+
+        # Camera always looks directly at the fish
+        camera_center = fish_pos.copy()
+
+        # Debug: print camera info
+        if step % 30 == 0:
+            print(f"Camera eye: [{camera_eye[0]:.3f}, {camera_eye[1]:.3f}, {camera_eye[2]:.3f}]")
+            print(f"Camera center: [{camera_center[0]:.3f}, {camera_center[1]:.3f}, {camera_center[2]:.3f}]")
+            print("="*50)
+
+        # Convert to row vectors (1, 3)
+        camera_eye_row = camera_eye.reshape(1, 3)
+        camera_center_row = camera_center.reshape(1, 3)
+
+        viewer.viewer.set_camera_eye(camera_eye_row)
+        viewer.viewer.set_camera_center(camera_center_row)
+
+    def pre_draw_callback():
+         nonlocal J, B, T0, sim, st, step
+         # Get the current fish transform from the guizmo/user input
+         p = viewer.T0[0:3, :].reshape( (12, 1))
+         z = sim.step( p, st)
+         st.update(z, p)
+
+         # Extract just the translation (last column of the 3x4 transform)
+         # p is stored in Fortran order: [R11, R21, R31, R12, R22, R32, R13, R23, R33, tx, ty, tz]
+         fish_pos = np.array([p[9, 0], p[10, 0], p[11, 0]])
+         current_fish_pos[0] = fish_pos
+
+         # U = np.reshape(J @ p + B @ z, (J.shape[0]//3, 3), order="F") # full positions
+         viewer.update_subspace_coefficients(z, p)
+
+         # Update all floor tiles with animated caustics
+         for floor_id in floor_ids_ref[0]:
+             if floor_id in floor_transforms_ref[0]:
+                 p0_floor, z0_floor = floor_transforms_ref[0][floor_id]
+
+                 # Animate caustics by cycling through atlas frames
+                 if floor_id in caustics_data_ref[0]:
+                     caustics_info = caustics_data_ref[0][floor_id]
+                     num_frames = caustics_info['num_frames']
+                     frame_rate = caustics_info['frame_rate']
+                     TC_base = caustics_info['TC_base']
+                     FTC = caustics_info['FTC']
+
+                     # Calculate current frame (cycle through frames)
+                     current_frame = int((step / frame_rate) % num_frames)
+
+                     # Shift UV coordinates to current frame in atlas
+                     # Atlas has frames laid out horizontally, so we shift U coordinate
+                     frame_offset = current_frame / num_frames
+                     TC_animated = TC_base.copy()
+                     TC_animated[:, 0] = (TC_base[:, 0] / num_frames) + frame_offset
+
+                     # Update texture coordinates (this requires the viewer to support dynamic UV updates)
+                     # Note: If viewer doesn't support this, we'd need to modify the C++ binding
+                     try:
+                         # Attempt to update texture coordinates dynamically
+                         TC_contig = np.ascontiguousarray(TC_animated, dtype=np.float64)
+                         FTC_contig = np.ascontiguousarray(FTC, dtype=np.int32)
+                         # This assumes the viewer has the texture already loaded, just updating UVs
+                         viewer.viewer.set_texture_coords(TC_contig, FTC_contig, floor_id)
+                     except AttributeError:
+                         # If set_texture_coords doesn't exist, we can't animate dynamically
+                         # In this case, caustics will be static (first frame)
+                         pass
+
+                 viewer.viewer.set_bone_transforms(p0_floor, z0_floor, floor_id)
+                 viewer.viewer.updateGL(floor_id)
+
+         # Update camera based on current mode
+         if camera_mode[0] == 'first_person':
+             update_first_person_camera()
+         else:
+             update_third_person_camera()
+
+         step += 1
+
+    viewer = fc.viewers.interactive_handle_subspace_viewer(V, T, Wp, Ws,  pre_draw_callback,T0=T0,
+                                                  texture_png=texture_png, texture_obj=texture_obj,
+                                                  t0=to, s0=so, init_guizmo=True)
+
+    # Add custom key callback for camera switching
+    original_callback = viewer.callback_key_pressed
+    def custom_key_callback(key, modifier):
+        # Handle 'V' key for camera switching
+        if key == ord('v') or key == ord('V'):
+            if camera_mode[0] == 'third_person':
+                camera_mode[0] = 'first_person'
+                print("Switched to first-person camera (follows fish)")
+            else:
+                camera_mode[0] = 'third_person'
+                print("Switched to third-person camera (static overview)")
+            return False
+
+        # Call original callback for other keys (g, c, etc.)
+        return original_callback(key, modifier)
+
+    viewer.viewer.set_key_callback(custom_key_callback)
+    print("  v        Toggle Camera View (Third-person / First-person)")
+
+    # === ADD OCEAN FLOOR WITH CAUSTICS (3x3 GRID) ===
+    # Load caustics atlas using fc.get_data() for proper path resolution
+    floor_path = fc.get_data("sea_floor.obj")
+    floor_texture_path = fc.get_data("sandtexture.jpg")
+    caustics_atlas_path = fc.get_data("caustics/caustics_atlas.png")
+
+    if os.path.exists(floor_path):
+        try:
+            print(f"\nLoading ocean floor grid (3x3) with animated caustics from {floor_path}...")
+
+            # Load the floor mesh once (we'll reuse it for all tiles)
+            [V_floor_base, TC_floor, N_floor, F_floor, FTC_floor, FN_floor] = fcd.readOBJ_tex(floor_path)
+            print(f"  Loaded floor template: {V_floor_base.shape[0]} vertices, {F_floor.shape[0]} faces")
+
+            # Triangulate quads if needed
+            if F_floor.shape[1] == 4:
+                print(f"  Triangulating quad mesh...")
+                num_quads = F_floor.shape[0]
+                F_floor_tri = np.zeros((num_quads * 2, 3), dtype=np.int32)
+                F_floor_tri[0::2, :] = F_floor[:, [0, 1, 2]]
+                F_floor_tri[1::2, :] = F_floor[:, [0, 2, 3]]
+                F_floor = F_floor_tri
+
+                if FTC_floor is not None and FTC_floor.shape[1] == 4:
+                    FTC_tri = np.zeros((num_quads * 2, 3), dtype=np.int32)
+                    FTC_tri[0::2, :] = FTC_floor[:, [0, 1, 2]]
+                    FTC_tri[1::2, :] = FTC_floor[:, [0, 2, 3]]
+                    FTC_floor = FTC_tri
+                    print(f"  Triangulated: {F_floor.shape[0]} triangles")
+
+            # Make base arrays contiguous
+            F_floor = np.ascontiguousarray(F_floor, dtype=np.int32)
+
+            # Floor tile parameters
+            tile_scale = 0.05  # Scale to match fish size
+            floor_y_offset = -0.5  # Position just below fish
+
+            # Calculate tile size in world space
+            V_floor_scaled_base = V_floor_base * tile_scale
+            tile_width = V_floor_scaled_base[:, 0].max() - V_floor_scaled_base[:, 0].min()
+            tile_depth = V_floor_scaled_base[:, 2].max() - V_floor_scaled_base[:, 2].min()
+
+            print(f"  Tile dimensions: width={tile_width:.2f}, depth={tile_depth:.2f}")
+            print(f"  Creating 3x3 grid with animated caustics...")
+
+            # Check if caustics atlas exists
+            use_caustics = os.path.exists(caustics_atlas_path)
+            if use_caustics:
+                print(f"  Loading caustics atlas: {caustics_atlas_path}")
+                caustics_num_frames = 16  # Number of frames in the atlas
+                caustics_frame_rate = 2.0  # Change frame every N simulation steps (slower = more realistic)
+            else:
+                print(f"  Warning: Caustics atlas not found at {caustics_atlas_path}")
+                print(f"  Falling back to static floor texture")
+
+            # Check texture availability
+            use_texture = (TC_floor is not None and FTC_floor is not None and
+                          TC_floor.shape[0] > 0 and FTC_floor.shape[0] > 0)
+
+            if use_texture:
+                TC_contig = np.ascontiguousarray(TC_floor, dtype=np.float64)
+                FTC_contig = np.ascontiguousarray(FTC_floor, dtype=np.int32)
+
+            # Create 3x3 grid of floor tiles
+            num_bones = 16
+            num_modes_floor = 16
+            floor_tiles = []
+
+            for i in range(3):  # rows (Z direction)
+                for j in range(3):  # columns (X direction)
+                    # Calculate tile offset (centered around origin)
+                    x_offset = (j - 1) * tile_width  # -1, 0, 1 -> left, center, right
+                    z_offset = (i - 1) * tile_depth  # -1, 0, 1 -> back, center, front
+
+                    # Create translated copy of vertices
+                    V_floor_tile = V_floor_scaled_base.copy()
+                    V_floor_tile[:, 0] += x_offset
+                    V_floor_tile[:, 1] += floor_y_offset
+                    V_floor_tile[:, 2] += z_offset
+                    V_floor_tile = np.ascontiguousarray(V_floor_tile, dtype=np.float64)
+
+                    # Add floor mesh
+                    floor_id = viewer.viewer.add_mesh()
+                    viewer.viewer.set_mesh(V_floor_tile, F_floor, floor_id)
+
+                    # Set caustics texture if available, otherwise use default
+                    if use_texture:
+                        try:
+                            texture_path = caustics_atlas_path if use_caustics else floor_texture_path
+                            if not os.path.exists(texture_path):
+                                # Fallback: create simple sandy color if no texture found
+                                texture_path = None
+
+                            if texture_path:
+                                viewer.viewer.set_texture(texture_path, TC_contig, FTC_contig, floor_id)
+
+                                # Store caustics animation data for this tile
+                                if use_caustics:
+                                    caustics_data_ref[0][floor_id] = {
+                                        'num_frames': caustics_num_frames,
+                                        'frame_rate': caustics_frame_rate,
+                                        'TC_base': TC_floor.copy(),
+                                        'FTC': FTC_floor.copy()
+                                    }
+                        except Exception as e:
+                            print(f"  Warning: Could not apply texture to tile ({i},{j}): {e}")
+
+                    # Set weights - bind all vertices to bone 0 with weight 1.0
+                    num_verts = V_floor_tile.shape[0]
+                    Wp_floor = np.zeros((num_verts, num_bones), dtype=np.float64)
+                    Wp_floor[:, 0] = 1.0  # All vertices fully bound to bone 0 (identity)
+                    Ws_floor = np.zeros((num_verts, num_modes_floor), dtype=np.float64)
+                    viewer.viewer.set_weights(Wp_floor, Ws_floor, floor_id)
+
+                    # Set rendering options AFTER weights
+                    if use_texture:
+                        viewer.viewer.set_show_lines(False, floor_id)
+                        viewer.viewer.set_face_based(False, floor_id)
+                    else:
+                        floor_color = np.array([200, 180, 150]) / 255.0
+                        viewer.viewer.set_color(floor_color, floor_id)
+                        viewer.viewer.set_face_based(True, floor_id)
+                        viewer.viewer.invert_normals(True, floor_id)
+                        viewer.viewer.set_show_lines(False, floor_id)
+
+                    # Initialize static identity bone transforms
+                    p0_floor = np.zeros((num_bones * 12, 1), dtype=np.float64)
+                    for bone_idx in range(num_bones):
+                        base_idx = bone_idx * 12
+                        p0_floor[base_idx + 0] = 1.0   # Identity matrix diagonal
+                        p0_floor[base_idx + 5] = 1.0
+                        p0_floor[base_idx + 10] = 1.0
+                    z0_floor = np.zeros((num_modes_floor * 12, 1), dtype=np.float64)
+
+                    viewer.viewer.set_bone_transforms(p0_floor, z0_floor, floor_id)
+
+                    # Store floor ID and transforms
+                    floor_ids_ref[0].append(floor_id)
+                    floor_transforms_ref[0][floor_id] = (p0_floor, z0_floor)
+                    floor_tiles.append((floor_id, i, j, x_offset, z_offset))
+
+                    print(f"  Tile ({i},{j}): mesh ID {floor_id}, offset=({x_offset:.2f}, {z_offset:.2f})")
+
+            print(f"\n  Floor grid loaded successfully: {len(floor_tiles)} tiles")
+            if use_caustics:
+                print(f"  Animated caustics enabled ({caustics_num_frames} frames)")
             print(f"  Floor tiles are static environment objects (not controlled by affine handle)")
 
         except Exception as e:
