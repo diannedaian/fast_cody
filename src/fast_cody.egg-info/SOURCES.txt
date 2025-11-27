@@ -53,7 +53,9 @@ src/fast_cody/apps/interactive_cd_face_tracking.py
 src/fast_cody/apps/interactive_cd_keyboard_handle.py
 src/fast_cody/apps/interactive_cd_multi_fish.py
 src/fast_cody/apps/interactive_cd_rig_anim.py
+src/fast_cody/apps/minimal_test_viewer.py
 src/fast_cody/apps/pipeline.py
+src/fast_cody/apps/simple_floor_viewer.py
 src/fast_cody/data/__init__.py
 src/fast_cody/data/build_caustics_atlas.py
 src/fast_cody/data/caustics_atlas.png

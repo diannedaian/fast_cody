@@ -94,22 +94,25 @@ uniform float specular_exponent;
         vec4 causticsSample = texture(u_causticsAtlas, uv);
         float C = causticsSample.r;  // Use red channel for caustics intensity
 
-        // Apply caustics: bright areas add light, dark areas cast shadows
-        // C is in range [0, 1] where 0 = black (shadow), 1 = white (bright light)
+        // OVERLAY CAUSTICS AS LIGHT LAYER:
+        // Filter out black parts using threshold - only bright parts become visible light
+        // Values below 0.1 are filtered out (transparent), values above add light
 
-        // Bright areas: add light (multiplicative + additive for realistic light)
-        float brightIntensity = max(0.0, C - 0.3);  // Only bright areas (above 0.3)
-        brightIntensity = smoothstep(0.0, 1.0, brightIntensity);  // Smooth transition
-        finalColor.rgb += brightIntensity * 0.5;  // Additive light in bright areas
+        // Simple threshold filter: filter out dark caustic areas (black becomes transparent)
+        float causticsLight = C;
+        if (causticsLight < 0.1) {
+            causticsLight = 0.0;  // Filter out dark areas completely
+        }
 
-        // Dark areas: cast shadows (reduce brightness)
-        float shadowIntensity = max(0.0, 0.3 - C);  // Only dark areas (below 0.3)
-        shadowIntensity = smoothstep(0.0, 1.0, shadowIntensity);  // Smooth transition
-        finalColor.rgb *= 1.0 - shadowIntensity * 0.2;  // Darken shadow areas (max 20% darker)
+        // Apply caustics as ADDITIVE lighting on top of the base material
+        // This preserves the original sand texture while adding animated light patterns
+        vec3 causticsColor = vec3(0.9, 0.95, 1.0);  // Slight blue-cyan tint for underwater feel
+        finalColor.rgb += causticsColor * causticsLight * 0.5;  // Pure additive blending
 
-        // Depth-based attenuation: darker at lower Y (deeper), brighter at higher Y (shallower)
-        float atten = clamp(exp(-v_worldPos.y * 0.3), 0.2, 1.0);
-        finalColor.rgb *= atten;
+        // Add darker shadows for more contrast
+        // Create shadow darkening in areas where caustics are dim (below 0.3)
+        float shadow = smoothstep(0.3, 0.0, C);  // 0.0-0.3 range creates shadows
+        finalColor.rgb *= 1.0 - shadow * 0.4;  // Darken by up to 40% in shadow areas
 
         if (fixed_color != vec4(0.0)) finalColor = fixed_color;
         outColor = finalColor;
