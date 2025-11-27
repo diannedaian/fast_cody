@@ -106,13 +106,15 @@ uniform float specular_exponent;
 
         // Apply caustics as ADDITIVE lighting on top of the base material
         // This preserves the original sand texture while adding animated light patterns
+        // NOTE: Reduced intensity (0.15) because caustics are applied per-object
+        // With multiple overlapping objects, the effect accumulates visually
         vec3 causticsColor = vec3(0.9, 0.95, 1.0);  // Slight blue-cyan tint for underwater feel
-        finalColor.rgb += causticsColor * causticsLight * 0.5;  // Pure additive blending
+        finalColor.rgb += causticsColor * causticsLight * 0.15;  // Reduced from 0.5 to 0.15
 
-        // Add darker shadows for more contrast
+        // Add darker shadows for more contrast (also reduced for subtlety)
         // Create shadow darkening in areas where caustics are dim (below 0.3)
         float shadow = smoothstep(0.3, 0.0, C);  // 0.0-0.3 range creates shadows
-        finalColor.rgb *= 1.0 - shadow * 0.4;  // Darken by up to 40% in shadow areas
+        finalColor.rgb *= 1.0 - shadow * 0.15;  // Reduced from 0.4 to 0.15 (15% max darkening)
 
         if (fixed_color != vec4(0.0)) finalColor = fixed_color;
         outColor = finalColor;

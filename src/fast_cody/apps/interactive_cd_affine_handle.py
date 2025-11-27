@@ -143,6 +143,8 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
     water_surface_id_ref = [None]  # ID for water surface mesh
     camera_mode = ['third_person']  # 'third_person' or 'first_person'
     current_fish_pos = [np.array([0.0, 0.0, 0.0])]  # Store just the fish position (updated each frame)
+    control_mode = ['guizmo']  # 'guizmo' or 'keyboard'
+    keyboard_velocity = [np.array([0.0, 0.0, 0.0])]  # Current keyboard movement velocity
 
     # Camera update functions
     def update_third_person_camera():
@@ -154,33 +156,47 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
         viewer.viewer.set_camera_center(camera_center)
 
     def update_first_person_camera():
-        """Camera that follows behind and above the fish"""
-        # Get the fish position - simple position tracking only
+        """Camera that follows behind the fish using its orientation"""
+        # Get the current fish transform from viewer.T0 (the guizmo transform)
+        # Extract translation (position)
+        fish_pos_current = np.array([viewer.T0[0, 3], viewer.T0[1, 3], viewer.T0[2, 3]])
+
+        # Extract rotation matrix (3x3) from the transform
+        R = viewer.T0[0:3, 0:3]
+
+        # The forward direction of the fish is the first column (X-axis in local space)
+        # To go behind the fish, we go in the negative forward direction
+        forward = R[:, 0]  # Fish's forward direction
+        right = R[:, 1]    # Fish's right direction
+        up = R[:, 2]       # Fish's up direction
+
+        # Update stored position with smoothing to avoid jerky camera movement
+        alpha = 0.15  # Smoothing factor (lower = smoother but more lag)
+        current_fish_pos[0] = alpha * fish_pos_current + (1 - alpha) * current_fish_pos[0]
         fish_pos = current_fish_pos[0]
 
-        # Debug: print fish position every 30 frames
-        if step % 30 == 0:
-            print(f"\n=== Fish Position Debug (step {step}) ===")
+        # Debug: print fish orientation every 60 frames
+        if step % 60 == 0:
+            print(f"\n=== First-Person Camera (step {step}) ===")
             print(f"Fish position: [{fish_pos[0]:.3f}, {fish_pos[1]:.3f}, {fish_pos[2]:.3f}]")
+            print(f"Forward: [{forward[0]:.3f}, {forward[1]:.3f}, {forward[2]:.3f}]")
 
-        # Camera follows with fixed world-space offset (behind and above)
-        camera_offset_x = 0.0      # No X offset
-        camera_offset_y = 1.5      # Height above fish
-        camera_offset_z = -3.0     # Behind the fish in world space
+        # Camera positioned behind and slightly above the fish
+        # Using the fish's local coordinate system for proper following
+        camera_distance = 2.5    # Distance behind the fish
+        camera_height = 0.8      # Height above the fish
 
-        camera_eye = np.array([
-            fish_pos[0] + camera_offset_x,
-            fish_pos[1] + camera_offset_y,
-            fish_pos[2] + camera_offset_z
-        ])
+        # Position camera behind fish (negative forward direction) and above
+        camera_eye = fish_pos - forward * camera_distance + up * camera_height
 
-        # Camera always looks directly at the fish
-        camera_center = fish_pos.copy()
+        # Camera looks at a point slightly ahead of the fish for better view
+        look_ahead_distance = 1.0
+        camera_center = fish_pos + forward * look_ahead_distance
 
         # Debug: print camera info
-        if step % 30 == 0:
+        if step % 60 == 0:
             print(f"Camera eye: [{camera_eye[0]:.3f}, {camera_eye[1]:.3f}, {camera_eye[2]:.3f}]")
-            print(f"Camera center: [{camera_center[0]:.3f}, {camera_center[1]:.3f}, {camera_center[2]:.3f}]")
+            print(f"Camera looking at: [{camera_center[0]:.3f}, {camera_center[1]:.3f}, {camera_center[2]:.3f}]")
             print("="*50)
 
         # Convert to row vectors (1, 3)
@@ -192,7 +208,19 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
 
     def pre_draw_callback():
          nonlocal J, B, T0, sim, st, step
-         # Get the current fish transform from the guizmo/user input
+
+         # Apply keyboard movement if in keyboard control mode
+         if control_mode[0] == 'keyboard':
+             # Apply velocity to the fish position
+             movement_speed = 0.05  # Units per frame
+             velocity = keyboard_velocity[0] * movement_speed
+
+             # Update the transform matrix with new position
+             viewer.T0[0, 3] += velocity[0]  # X translation
+             viewer.T0[1, 3] += velocity[1]  # Y translation
+             viewer.T0[2, 3] += velocity[2]  # Z translation
+
+         # Get the current fish transform from the guizmo/user input or keyboard
          p = viewer.T0[0:3, :].reshape( (12, 1))
          z = sim.step( p, st)
          st.update(z, p)
@@ -273,9 +301,81 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
     background_color = np.array([95, 191, 210]) / 255.0  # Convert hex to RGB (0-1)
     viewer.viewer.set_background_color(background_color)
 
-    # Add custom key callback for camera switching
+    # Add custom key callback for camera switching and keyboard control
     original_callback = viewer.callback_key_pressed
+
+    # Track which keys are currently pressed with frame timestamps
+    keys_pressed = {}
+    key_press_timeout = 3  # Keys expire after 3 frames if not re-pressed
+
+    def update_keyboard_velocity():
+        """Update movement velocity based on currently pressed keys"""
+        # Remove stale key presses (older than timeout)
+        current_frame = step
+        expired_keys = [k for k, frame in keys_pressed.items() if current_frame - frame > key_press_timeout]
+        for k in expired_keys:
+            del keys_pressed[k]
+
+        vel = np.array([0.0, 0.0, 0.0])
+
+        # WASD keys for horizontal movement
+        if ord('w') in keys_pressed or ord('W') in keys_pressed:
+            vel[2] -= 1.0  # Forward (negative Z)
+        if ord('s') in keys_pressed or ord('S') in keys_pressed:
+            vel[2] += 1.0  # Backward (positive Z)
+        if ord('a') in keys_pressed or ord('A') in keys_pressed:
+            vel[0] -= 1.0  # Left (negative X)
+        if ord('d') in keys_pressed or ord('D') in keys_pressed:
+            vel[0] += 1.0  # Right (positive X)
+
+        # Q/E for vertical movement
+        if ord('q') in keys_pressed or ord('Q') in keys_pressed:
+            vel[1] -= 1.0  # Down (negative Y)
+        if ord('e') in keys_pressed or ord('E') in keys_pressed:
+            vel[1] += 1.0  # Up (positive Y)
+
+        # Arrow keys as alternative
+        if 265 in keys_pressed:  # Up arrow
+            vel[2] -= 1.0  # Forward
+        if 264 in keys_pressed:  # Down arrow
+            vel[2] += 1.0  # Backward
+        if 263 in keys_pressed:  # Left arrow
+            vel[0] -= 1.0  # Left
+        if 262 in keys_pressed:  # Right arrow
+            vel[0] += 1.0  # Right
+
+        # Normalize velocity if moving diagonally
+        vel_magnitude = np.linalg.norm(vel)
+        if vel_magnitude > 0:
+            vel = vel / vel_magnitude
+
+        keyboard_velocity[0] = vel
+
     def custom_key_callback(key, modifier):
+        # Handle 'K' key for control mode switching
+        if key == ord('k') or key == ord('K'):
+            if control_mode[0] == 'guizmo':
+                control_mode[0] = 'keyboard'
+                # Hide guizmo
+                if hasattr(viewer, 'guizmo') and viewer.guizmo is not None:
+                    viewer.guizmo.visible = False
+                print("\n=== Keyboard Control Activated ===")
+                print("  W/S     Forward/Backward")
+                print("  A/D     Left/Right")
+                print("  Q/E     Down/Up")
+                print("  Arrows  Alternative movement")
+                print("  K       Switch back to Guizmo")
+                print("="*35)
+            else:
+                control_mode[0] = 'guizmo'
+                # Show guizmo
+                if hasattr(viewer, 'guizmo') and viewer.guizmo is not None:
+                    viewer.guizmo.visible = True
+                keyboard_velocity[0] = np.array([0.0, 0.0, 0.0])  # Stop movement
+                keys_pressed.clear()
+                print("Switched to Guizmo control")
+            return True
+
         # Handle 'V' key for camera switching
         if key == ord('v') or key == ord('V'):
             if camera_mode[0] == 'third_person':
@@ -286,10 +386,30 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
                 print("Switched to third-person camera (static overview)")
             return False
 
+        # Handle movement keys in keyboard control mode
+        if control_mode[0] == 'keyboard':
+            # Mark key as pressed
+            keys_pressed[key] = True
+            update_keyboard_velocity()
+            return True
+
         # Call original callback for other keys (g, c, etc.)
         return original_callback(key, modifier)
 
+    # Also need to handle key release to stop movement
+    def custom_key_release_callback(key, modifier):
+        if control_mode[0] == 'keyboard' and key in keys_pressed:
+            del keys_pressed[key]
+            update_keyboard_velocity()
+            return True
+        return False
+
     viewer.viewer.set_key_callback(custom_key_callback)
+    # Note: key release callback might not be available in all viewer implementations
+    # If available, uncomment the following line:
+    # viewer.viewer.set_key_release_callback(custom_key_release_callback)
+
+    print("  k        Toggle Control Mode (Guizmo / Keyboard)")
     print("  v        Toggle Camera View (Third-person / First-person)")
 
     if enable_caustics:
@@ -621,6 +741,8 @@ def interactive_cd_affine_handle_with_caustics(msh_file=None, V=None, T=None, Ws
     caustics_data_ref = [{}]  # Dictionary mapping floor_id -> caustics animation data
     camera_mode = ['third_person']  # 'third_person' or 'first_person'
     current_fish_pos = [np.array([0.0, 0.0, 0.0])]  # Store just the fish position (updated each frame)
+    control_mode = ['guizmo']  # 'guizmo' or 'keyboard'
+    keyboard_velocity = [np.array([0.0, 0.0, 0.0])]  # Current keyboard movement velocity
 
     # Camera update functions
     def update_third_person_camera():
@@ -632,33 +754,47 @@ def interactive_cd_affine_handle_with_caustics(msh_file=None, V=None, T=None, Ws
         viewer.viewer.set_camera_center(camera_center)
 
     def update_first_person_camera():
-        """Camera that follows behind and above the fish"""
-        # Get the fish position - simple position tracking only
+        """Camera that follows behind the fish using its orientation"""
+        # Get the current fish transform from viewer.T0 (the guizmo transform)
+        # Extract translation (position)
+        fish_pos_current = np.array([viewer.T0[0, 3], viewer.T0[1, 3], viewer.T0[2, 3]])
+
+        # Extract rotation matrix (3x3) from the transform
+        R = viewer.T0[0:3, 0:3]
+
+        # The forward direction of the fish is the first column (X-axis in local space)
+        # To go behind the fish, we go in the negative forward direction
+        forward = R[:, 0]  # Fish's forward direction
+        right = R[:, 1]    # Fish's right direction
+        up = R[:, 2]       # Fish's up direction
+
+        # Update stored position with smoothing to avoid jerky camera movement
+        alpha = 0.15  # Smoothing factor (lower = smoother but more lag)
+        current_fish_pos[0] = alpha * fish_pos_current + (1 - alpha) * current_fish_pos[0]
         fish_pos = current_fish_pos[0]
 
-        # Debug: print fish position every 30 frames
-        if step % 30 == 0:
-            print(f"\n=== Fish Position Debug (step {step}) ===")
+        # Debug: print fish orientation every 60 frames
+        if step % 60 == 0:
+            print(f"\n=== First-Person Camera (step {step}) ===")
             print(f"Fish position: [{fish_pos[0]:.3f}, {fish_pos[1]:.3f}, {fish_pos[2]:.3f}]")
+            print(f"Forward: [{forward[0]:.3f}, {forward[1]:.3f}, {forward[2]:.3f}]")
 
-        # Camera follows with fixed world-space offset (behind and above)
-        camera_offset_x = 0.0      # No X offset
-        camera_offset_y = 1.5      # Height above fish
-        camera_offset_z = -3.0     # Behind the fish in world space
+        # Camera positioned behind and slightly above the fish
+        # Using the fish's local coordinate system for proper following
+        camera_distance = 2.5    # Distance behind the fish
+        camera_height = 0.8      # Height above the fish
 
-        camera_eye = np.array([
-            fish_pos[0] + camera_offset_x,
-            fish_pos[1] + camera_offset_y,
-            fish_pos[2] + camera_offset_z
-        ])
+        # Position camera behind fish (negative forward direction) and above
+        camera_eye = fish_pos - forward * camera_distance + up * camera_height
 
-        # Camera always looks directly at the fish
-        camera_center = fish_pos.copy()
+        # Camera looks at a point slightly ahead of the fish for better view
+        look_ahead_distance = 1.0
+        camera_center = fish_pos + forward * look_ahead_distance
 
         # Debug: print camera info
-        if step % 30 == 0:
+        if step % 60 == 0:
             print(f"Camera eye: [{camera_eye[0]:.3f}, {camera_eye[1]:.3f}, {camera_eye[2]:.3f}]")
-            print(f"Camera center: [{camera_center[0]:.3f}, {camera_center[1]:.3f}, {camera_center[2]:.3f}]")
+            print(f"Camera looking at: [{camera_center[0]:.3f}, {camera_center[1]:.3f}, {camera_center[2]:.3f}]")
             print("="*50)
 
         # Convert to row vectors (1, 3)
@@ -670,7 +806,19 @@ def interactive_cd_affine_handle_with_caustics(msh_file=None, V=None, T=None, Ws
 
     def pre_draw_callback():
          nonlocal J, B, T0, sim, st, step
-         # Get the current fish transform from the guizmo/user input
+
+         # Apply keyboard movement if in keyboard control mode
+         if control_mode[0] == 'keyboard':
+             # Apply velocity to the fish position
+             movement_speed = 0.05  # Units per frame
+             velocity = keyboard_velocity[0] * movement_speed
+
+             # Update the transform matrix with new position
+             viewer.T0[0, 3] += velocity[0]  # X translation
+             viewer.T0[1, 3] += velocity[1]  # Y translation
+             viewer.T0[2, 3] += velocity[2]  # Z translation
+
+         # Get the current fish transform from the guizmo/user input or keyboard
          p = viewer.T0[0:3, :].reshape( (12, 1))
          z = sim.step( p, st)
          st.update(z, p)
@@ -737,9 +885,81 @@ def interactive_cd_affine_handle_with_caustics(msh_file=None, V=None, T=None, Ws
     background_color = np.array([95, 191, 210]) / 255.0  # Convert hex to RGB (0-1)
     viewer.viewer.set_background_color(background_color)
 
-    # Add custom key callback for camera switching
+    # Add custom key callback for camera switching and keyboard control
     original_callback = viewer.callback_key_pressed
+
+    # Track which keys are currently pressed with frame timestamps
+    keys_pressed = {}
+    key_press_timeout = 3  # Keys expire after 3 frames if not re-pressed
+
+    def update_keyboard_velocity():
+        """Update movement velocity based on currently pressed keys"""
+        # Remove stale key presses (older than timeout)
+        current_frame = step
+        expired_keys = [k for k, frame in keys_pressed.items() if current_frame - frame > key_press_timeout]
+        for k in expired_keys:
+            del keys_pressed[k]
+
+        vel = np.array([0.0, 0.0, 0.0])
+
+        # WASD keys for horizontal movement
+        if ord('w') in keys_pressed or ord('W') in keys_pressed:
+            vel[2] -= 1.0  # Forward (negative Z)
+        if ord('s') in keys_pressed or ord('S') in keys_pressed:
+            vel[2] += 1.0  # Backward (positive Z)
+        if ord('a') in keys_pressed or ord('A') in keys_pressed:
+            vel[0] -= 1.0  # Left (negative X)
+        if ord('d') in keys_pressed or ord('D') in keys_pressed:
+            vel[0] += 1.0  # Right (positive X)
+
+        # Q/E for vertical movement
+        if ord('q') in keys_pressed or ord('Q') in keys_pressed:
+            vel[1] -= 1.0  # Down (negative Y)
+        if ord('e') in keys_pressed or ord('E') in keys_pressed:
+            vel[1] += 1.0  # Up (positive Y)
+
+        # Arrow keys as alternative
+        if 265 in keys_pressed:  # Up arrow
+            vel[2] -= 1.0  # Forward
+        if 264 in keys_pressed:  # Down arrow
+            vel[2] += 1.0  # Backward
+        if 263 in keys_pressed:  # Left arrow
+            vel[0] -= 1.0  # Left
+        if 262 in keys_pressed:  # Right arrow
+            vel[0] += 1.0  # Right
+
+        # Normalize velocity if moving diagonally
+        vel_magnitude = np.linalg.norm(vel)
+        if vel_magnitude > 0:
+            vel = vel / vel_magnitude
+
+        keyboard_velocity[0] = vel
+
     def custom_key_callback(key, modifier):
+        # Handle 'K' key for control mode switching
+        if key == ord('k') or key == ord('K'):
+            if control_mode[0] == 'guizmo':
+                control_mode[0] = 'keyboard'
+                # Hide guizmo
+                if hasattr(viewer, 'guizmo') and viewer.guizmo is not None:
+                    viewer.guizmo.visible = False
+                print("\n=== Keyboard Control Activated ===")
+                print("  W/S     Forward/Backward")
+                print("  A/D     Left/Right")
+                print("  Q/E     Down/Up")
+                print("  Arrows  Alternative movement")
+                print("  K       Switch back to Guizmo")
+                print("="*35)
+            else:
+                control_mode[0] = 'guizmo'
+                # Show guizmo
+                if hasattr(viewer, 'guizmo') and viewer.guizmo is not None:
+                    viewer.guizmo.visible = True
+                keyboard_velocity[0] = np.array([0.0, 0.0, 0.0])  # Stop movement
+                keys_pressed.clear()
+                print("Switched to Guizmo control")
+            return True
+
         # Handle 'V' key for camera switching
         if key == ord('v') or key == ord('V'):
             if camera_mode[0] == 'third_person':
@@ -750,10 +970,30 @@ def interactive_cd_affine_handle_with_caustics(msh_file=None, V=None, T=None, Ws
                 print("Switched to third-person camera (static overview)")
             return False
 
+        # Handle movement keys in keyboard control mode
+        if control_mode[0] == 'keyboard':
+            # Mark key as pressed
+            keys_pressed[key] = True
+            update_keyboard_velocity()
+            return True
+
         # Call original callback for other keys (g, c, etc.)
         return original_callback(key, modifier)
 
+    # Also need to handle key release to stop movement
+    def custom_key_release_callback(key, modifier):
+        if control_mode[0] == 'keyboard' and key in keys_pressed:
+            del keys_pressed[key]
+            update_keyboard_velocity()
+            return True
+        return False
+
     viewer.viewer.set_key_callback(custom_key_callback)
+    # Note: key release callback might not be available in all viewer implementations
+    # If available, uncomment the following line:
+    # viewer.viewer.set_key_release_callback(custom_key_release_callback)
+
+    print("  k        Toggle Control Mode (Guizmo / Keyboard)")
     print("  v        Toggle Camera View (Third-person / First-person)")
 
     # === ADD OCEAN FLOOR WITH CAUSTICS (5x5 GRID) ===

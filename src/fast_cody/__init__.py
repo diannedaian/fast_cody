@@ -40,6 +40,8 @@ from .read_msh import read_msh
 from .apps.interactive_cd_rig_anim import interactive_cd_rig_anim
 from .apps.interactive_cd_face_tracking import interactive_cd_face_tracking
 from .apps.interactive_cd_affine_handle import interactive_cd_affine_handle
+from .apps.interactive_cd_multi_fish import interactive_cd_multi_fish
+from .apps.interactive_cd_affine_handle_multi_fish import interactive_cd_affine_handle_multi_fish
 
 #Viewers
 from .viewers.WeightsViewer import WeightsViewer
