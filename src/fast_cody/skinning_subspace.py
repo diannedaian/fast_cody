@@ -55,21 +55,38 @@ def skinning_subspace(X, T, num_modes, num_clusters,
     if cache_dir is not None:
         cache_dir = os.path.join(cache_dir, "./")
         os.makedirs(cache_dir, exist_ok=True)
+
+    # Try to read from cache if requested
+    cache_loaded = False
     if read_cache and cache_dir is not None:
-        assert (os.path.exists(cache_dir) and "cache directory " + cache_dir + " we are trying to read from does not exist")
-        B = np.load(cache_dir + "/B.npy")
+        # Check if cache files exist
+        cache_files_exist = (os.path.exists(cache_dir + "/B.npy") and
+                            os.path.exists(cache_dir + "/W.npy") and
+                            os.path.exists(cache_dir + "/l.npy"))
 
+        if cache_files_exist:
+            try:
+                B = np.load(cache_dir + "/B.npy")
+                W = np.load(cache_dir + "/W.npy")
+                W = W[:, :num_modes]
+                #
+                i = np.arange(B.shape[1])
+                ii = i.reshape((B.shape[1]//3, 3), order='F').reshape((B.shape[1]//12, 4, 3) )
+                i = ii[:num_modes, :, :].reshape((num_modes*4, 3)).reshape((num_modes*12), order='F')
+                B = B[:, i]
+                l = np.load(cache_dir + "/l.npy")
+                cache_loaded = True
+            except (IOError, ValueError, KeyError) as e:
+                # Cache files exist but are corrupted or incompatible, recompute
+                print(f"Warning: Cache files in {cache_dir} are invalid ({e}), recomputing...")
+        else:
+            print(f"Warning: Cache directory {cache_dir} does not contain required files, recomputing...")
 
-        W = np.load(cache_dir + "/W.npy")
-        W = W[:, :num_modes]
-        #
-        i = np.arange(B.shape[1])
-        ii = i.reshape((B.shape[1]//3, 3), order='F').reshape((B.shape[1]//12, 4, 3) )
-        i = ii[:num_modes, :, :].reshape((num_modes*4, 3)).reshape((num_modes*12), order='F')
-        B = B[:, i]
-        l = np.load(cache_dir + "/l.npy")
-    else:
-        [W, E] = laplacian_eigenmodes(X, T, num_modes, read_cache=False, mu=mu, J=C, constraint_enforcement=constraint_enforcement)
+    # Recompute if cache wasn't loaded
+    if not cache_loaded:
+        # Pass cache_dir to laplacian_eigenmodes so it uses the correct fish-specific cache
+        # This prevents matrix mismatch errors when different meshes share cache
+        [W, E] = laplacian_eigenmodes(X, T, num_modes, read_cache=False, cache_dir=cache_dir, mu=mu, J=C, constraint_enforcement=constraint_enforcement)
 
         B = lbs_jacobian(X, W)
 

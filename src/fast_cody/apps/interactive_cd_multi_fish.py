@@ -63,8 +63,13 @@ def interactive_cd_multi_fish(msh_files=None, Vs=None, Ts=None, Ws_list=None, l_
 
     # Handle input: normalize to lists
     if msh_files is None:
+        # Use the specified model for the first fish, default for others
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        first_fish_model = os.path.join(project_root, "outputs", "converted", "20251121_121348", "model.msh")
         default_msh = fc.get_data("./cd_fish.msh")
-        msh_files = [default_msh] * num_fishes
+
+        # First fish uses the specified model, others use default
+        msh_files = [first_fish_model] + [default_msh] * (num_fishes - 1)
     elif isinstance(msh_files, str):
         msh_files = [msh_files] * num_fishes
 
@@ -83,10 +88,15 @@ def interactive_cd_multi_fish(msh_files=None, Vs=None, Ts=None, Ws_list=None, l_
     if texture_png_list is None:
         texture_png_list = []
         texture_obj_list = []
-        for msh_file in msh_files:
+        for fish_idx, msh_file in enumerate(msh_files):
             if msh_file == fc.get_data("./cd_fish.msh"):
                 texture_png_list.append(fc.get_data("./cd_fish_tex.png"))
                 texture_obj_list.append(fc.get_data("./cd_fish_tex.obj"))
+            elif fish_idx == 0:
+                # First fish uses model from 20251121_121348, set its textures
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+                texture_png_list.append(os.path.join(project_root, "outputs", "converted", "20251121_121348", "texture.png"))
+                texture_obj_list.append(os.path.join(project_root, "outputs", "converted", "20251121_121348", "model.obj"))
             else:
                 texture_png_list.append(None)
                 texture_obj_list.append(None)
@@ -247,6 +257,12 @@ def interactive_cd_multi_fish(msh_files=None, Vs=None, Ts=None, Ws_list=None, l_
 
     viewer_base = fcd.fast_cd_viewer_custom_shader(vertex_shader_path,
                                                    fragment_shader_path, 16, 16)
+
+    # Set light position from above to light up the entire scene
+    # Position light above the scene (y=5.0) centered over the fishes (x=0, z=0)
+    light_position = np.array([0.0, 5.0, 0.0], dtype=np.float64)
+    viewer_base.set_light_position(light_position)
+    print(f"  Light position set to: {light_position}")
 
     # Add all meshes to viewer
     # First, create all mesh slots

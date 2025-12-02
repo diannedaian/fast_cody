@@ -594,7 +594,7 @@ def interactive_cd_affine_handle(msh_file=None, V=None, T=None, Ws=None, l=None,
             traceback.print_exc()
             print("  Continuing without floor...")
     else:
-        print(f"Floor file not found: {floor_path}")
+        print(f"Floor files not found: {floor_path1} or {floor_path2}")
         print("Continuing without floor...")
     # =======================
 

@@ -52,8 +52,8 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #                              read_cache=False, num_modes=16, constraint_enforcement="optimal")
 
 # Test generated model from pipeline
-name = os.path.join(project_root, "outputs", "converted", "model", "model.msh")
-texture_png = os.path.join(project_root, "outputs", "converted", "model", "texture.png")
-texture_obj = os.path.join(project_root, "outputs", "converted", "model", "model.obj")
+name = os.path.join(project_root, "outputs", "converted", "20251121_122631", "model.msh")
+texture_png = os.path.join(project_root, "outputs", "converted", "20251121_122631", "texture.png")
+texture_obj = os.path.join(project_root, "outputs", "converted", "20251121_122631", "model.obj")
 interactive_cd_affine_handle(name, texture_png=texture_png, texture_obj=texture_obj,
                              read_cache=False, num_modes=16, constraint_enforcement="optimal")

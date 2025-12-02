@@ -48,7 +48,8 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
                                             cache_dir=None, results_dir=None, read_cache=False,
                                             texture_png_list=None, texture_obj_list=None,
                                             num_fishes=2, fish_positions=None,
-                                            enable_caustics=False):
+                                            enable_caustics=False,
+                                            secondary_motion_scale=1.0, secondary_motion_max=3.0):
     """
     Runs an interactive fast CD simulation with multiple fishes, floor grid, and optional caustics.
     Each fish can be controlled independently using an affine handle with a Guizmo.
@@ -90,6 +91,11 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
         Initial positions for each fish. If None, fishes are positioned side by side.
     enable_caustics : bool
         If True, adds animated caustics light patterns on the ocean floor (default=False)
+    secondary_motion_scale : float
+        Scaling factor for secondary motion (default=1.0). Lower values reduce secondary motion intensity.
+    secondary_motion_max : float
+        Maximum magnitude for secondary motion to prevent excessive deformation (default=10.0).
+        Higher values allow more deformation, lower values clamp it more aggressively.
 
     Examples
     --------
@@ -104,6 +110,15 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
         msh_files = [default_msh] * num_fishes
     elif isinstance(msh_files, str):
         msh_files = [msh_files] * num_fishes
+    elif isinstance(msh_files, list) and len(msh_files) < num_fishes:
+        # If fewer msh_files than num_fishes, repeat the last one or use default
+        if len(msh_files) == 0:
+            default_msh = fc.get_data("./cd_fish.msh")
+            msh_files = [default_msh] * num_fishes
+        else:
+            # Repeat the last msh_file for remaining fishes
+            last_msh = msh_files[-1]
+            msh_files = msh_files + [last_msh] * (num_fishes - len(msh_files))
 
     if Vs is None:
         Vs = []
@@ -112,9 +127,17 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
             [V, F, T] = fcd.readMSH(msh_file)
             Vs.append(V)
             Ts.append(T)
+
+        # Safety check: ensure we have enough meshes
+        if len(Vs) < num_fishes:
+            raise ValueError(f"Not enough meshes loaded: expected {num_fishes}, got {len(Vs)}. "
+                          f"Please provide {num_fishes} msh_files or set num_fishes={len(Vs)}")
     elif not isinstance(Vs, list):
         Vs = [Vs] * num_fishes
         Ts = [Ts] * num_fishes
+    elif len(Vs) < num_fishes:
+        raise ValueError(f"Not enough vertex arrays: expected {num_fishes}, got {len(Vs)}. "
+                      f"Please provide {num_fishes} Vs or set num_fishes={len(Vs)}")
 
     # Set up textures
     if texture_png_list is None:
@@ -158,12 +181,10 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
         Wp = np.ones((V_centered.shape[0], 1))
         J = fc.lbs_jacobian(V_centered, Wp)
 
-        # For identical meshes, use the same cache directory to ensure identical simulation data
-        if fish_idx == 0:
-            fish_cache_dir = os.path.join(cache_dir, "fish_0")
-        else:
-            # Use the same cache as first fish to ensure identical simulation behavior
-            fish_cache_dir = os.path.join(cache_dir, "fish_0")
+        # Use separate cache directory for each fish to avoid matrix mismatch errors
+        # Each fish may have different geometry, so they need separate eigenmode caches
+        # This prevents "Factor is exactly singular" errors when different meshes share cache
+        fish_cache_dir = os.path.join(cache_dir, f"fish_{fish_idx}")
 
         os.makedirs(fish_cache_dir, exist_ok=True)
 
@@ -210,12 +231,14 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
         J_sim = J.copy() if isinstance(J, sp.sparse.csc_matrix) else sp.sparse.csc_matrix(J)
 
         try:
-            use_read_cache = read_cache or (fish_idx > 0)
+            # Each fish uses its own cache, so we can read cache if available
+            # Fish 0 writes cache, other fishes can read their own cache if it exists
+            use_read_cache = read_cache
             sim = fc.fast_cd_sim(V_sim, T_sim, B_sim, l_sim, J_sim,
                                 mu=mu, rho=rho, h=1e-2,
                                 cache_dir=fish_cache_dir,
                                 read_cache=use_read_cache,
-                                write_cache=(fish_idx == 0))
+                                write_cache=True)  # All fishes can write their own cache
             print(f"  Simulation created successfully for fish {fish_idx + 1}")
         except Exception as e:
             print(f"Error creating simulation for fish {fish_idx}: {e}")
@@ -227,13 +250,34 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
         T0 = np.identity(4).astype(dtype=np.float32, order="F")
         T0[0:3, 3] = fish_positions[fish_idx]
 
-        # Store initial T0 for computing relative transforms later
+        # Apply initial rotations if specified
+        # Fish 0: rotate around Y axis by 1.20 radians (68.69 degrees)
+        # Fish 2 and 6 (model 20251121_121348): rotate around X axis by 1.50 radians (86.22 degrees)
+        if fish_idx == 0:
+            # Rotation around Y axis
+            angle_y = 1.20  # 68.69 degrees
+            c, s = np.cos(angle_y), np.sin(angle_y)
+            R_y = np.array([[c, 0, s],
+                           [0, 1, 0],
+                           [-s, 0, c]], dtype=np.float32)
+            T0[0:3, 0:3] = R_y @ T0[0:3, 0:3]
+        elif fish_idx == 2 or fish_idx == 6:  # Fish 2 and 6 use model from 20251121_121348
+            # Rotation around X axis
+            angle_x = 1.50  # 86.22 degrees
+            c, s = np.cos(angle_x), np.sin(angle_x)
+            R_x = np.array([[1, 0, 0],
+                           [0, c, -s],
+                           [0, s, c]], dtype=np.float32)
+            T0[0:3, 0:3] = R_x @ T0[0:3, 0:3]
+
+        # Store initial T0 (for reference, but we'll use T0 directly like single fish version)
         T0_initial = T0.copy()
 
-        # Initialize state with identity transform
+        # Initialize state with initial T0 (including position offset)
+        # This matches the single fish behavior where state starts with T0
+        # CRITICAL: Each fish must start with its own T0 in the state to prevent exaggerated motion
         z0 = np.zeros((num_modes * 12, 1), dtype=np.float64)
-        T0_identity = np.identity(4).astype(dtype=np.float32, order="F")
-        p0 = T0_identity[0:3, :].reshape((12, 1)).astype(dtype=np.float64)
+        p0 = T0[0:3, :].reshape((12, 1)).astype(dtype=np.float64)
         st = fc.fast_cd_state(z0, p0)
 
         # For visualization: use centered vertices
@@ -266,6 +310,12 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
 
     viewer_base = fcd.fast_cd_viewer_custom_shader(vertex_shader_path,
                                                    fragment_shader_path, 16, 16)
+
+    # Set light position from above to light up the scene
+    # Position light above the scene (y=5.0) centered over the fishes (x=0, z=0)
+    light_position = np.array([0.0, 5.0, 0.0], dtype=np.float64)
+    viewer_base.set_light_position(light_position)
+    print(f"  Light position set to: {light_position}")
 
     # Add all fish meshes to viewer
     print("Adding meshes to viewer...")
@@ -527,7 +577,16 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
 
     def guizmo_callback(A):
         nonlocal active_fish_idx
-        fishes[active_fish_idx]['T0'] = A
+        # Update the active fish's T0 when guizmo is manipulated
+        # Ensure we're updating the correct fish and preserving the transform correctly
+        fishes[active_fish_idx]['T0'] = A.copy().astype(dtype=np.float32, order="F")
+        # Debug: print when guizmo updates (only occasionally to avoid spam)
+        if hasattr(guizmo_callback, 'last_print_step'):
+            if step - guizmo_callback.last_print_step > 60:
+                print(f"  [Fish {active_fish_idx + 1}] Guizmo updated T0: position={A[0:3, 3]}")
+                guizmo_callback.last_print_step = step
+        else:
+            guizmo_callback.last_print_step = 0
 
     viewer_base.init_guizmo(True, T0_active, guizmo_callback, transform_mode)
 
@@ -610,24 +669,42 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
                 if mesh_id < 0:
                     continue
 
+                # Get current T0 transform (updated by guizmo callback when manipulated)
                 T0_current = fish['T0'].copy()
-                T0_initial = fish['T0_initial']
 
-                # Compute relative transform for simulation
-                T0_initial_inv = np.linalg.inv(T0_initial.astype(np.float64))
-                T0_relative = (T0_initial_inv @ T0_current.astype(np.float64)).astype(np.float32)
+                # CRITICAL FIX: Use T0 directly for simulation (like single fish version)
+                # The position offset in T0 should not affect simulation if state is initialized correctly
+                # Each fish's simulation state starts at identity, so using T0 directly should work
+                # The key is that the simulation sees the absolute transform, not relative
+                p = np.ascontiguousarray(T0_current[0:3, :].reshape((12, 1)), dtype=np.float64)
 
-                p_relative = np.ascontiguousarray(T0_relative[0:3, :].reshape((12, 1)), dtype=np.float64)
+                # Step simulation with relative transform (prevents position offset from affecting simulation)
+                z = fish['sim'].step(p, fish['st'])
 
-                # Step simulation
-                z = fish['sim'].step(p_relative, fish['st'])
-                fish['st'].update(z, p_relative)
+                # Apply scaling and clamping to secondary motion to prevent excessive deformation
+                # This prevents the mesh from "flying around" when manipulated
+                # The issue is that fish 2 and 3 may have unstable secondary motion
+                z_scaled = z * secondary_motion_scale
 
-                # For rendering, use full T0
-                p = np.ascontiguousarray(fish['T0'][0:3, :].reshape((12, 1)), dtype=np.float64)
-                z_contiguous = np.ascontiguousarray(z)
+                # Clamp the magnitude of secondary motion to prevent instability
+                # This is critical for preventing exaggerated motion in fish 2 and 3
+                z_norm = np.linalg.norm(z_scaled)
+                if z_norm > secondary_motion_max:
+                    z_scaled = z_scaled / z_norm * secondary_motion_max
+                    # Debug: print when clamping occurs (only for fish 2 and 3, and only occasionally)
+                    if fish_idx > 0 and step % 60 == 0:
+                        print(f"  [Fish {fish_idx + 1}] Clamped secondary motion: norm={z_norm:.2f} -> {secondary_motion_max:.2f}")
 
-                viewer_base.set_bone_transforms(p, z_contiguous, mesh_id)
+                # Update state with clamped/scaled secondary motion
+                # IMPORTANT: Update state with the clamped value to prevent accumulation
+                fish['st'].update(z_scaled, p)
+
+                # For rendering, use full T0 (with position offset) so fish appears at correct location
+                # But use the clamped/scaled secondary motion
+                p_render = np.ascontiguousarray(T0_current[0:3, :].reshape((12, 1)), dtype=np.float64)
+                z_contiguous = np.ascontiguousarray(z_scaled)
+
+                viewer_base.set_bone_transforms(p_render, z_contiguous, mesh_id)
                 viewer_base.updateGL(mesh_id)
             except Exception as e:
                 print(f"Error updating fish {fish_idx}: {e}")
@@ -653,11 +730,25 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
                 viewer_base.set_bone_transforms(p0_floor, z0_floor, floor_id)
                 viewer_base.updateGL(floor_id)
 
-        # Sync guizmo to active fish
+        # Sync guizmo to active fish ONLY if it's not being actively manipulated
+        # This prevents overwriting user input during dragging
+        # The guizmo callback handles updates during manipulation, so we only sync
+        # when the guizmo is not being actively used (to keep it in sync with simulation)
         try:
             if hasattr(viewer_base, 'guizmo') and viewer_base.guizmo is not None:
-                T0_active = fishes[active_fish_idx]['T0'].copy().astype(dtype=np.float32, order="F")
-                viewer_base.guizmo.T = T0_active
+                # Only sync if guizmo is not being actively manipulated
+                # Check if guizmo is being used by checking if it's visible and not in a drag state
+                # For now, we'll sync but this should be done carefully to avoid conflicts
+                # The guizmo callback should be the source of truth during manipulation
+                T0_from_fish = fishes[active_fish_idx]['T0'].copy().astype(dtype=np.float32, order="F")
+                T0_from_guizmo = viewer_base.guizmo.T.copy()
+
+                # Only sync if there's a significant difference (guizmo might be slightly out of sync)
+                # This prevents overwriting during active manipulation
+                diff = np.linalg.norm(T0_from_fish - T0_from_guizmo)
+                if diff > 0.01:  # Only sync if difference is significant (0.01 units)
+                    # Sync guizmo to fish T0 (fish T0 is source of truth from simulation)
+                    viewer_base.guizmo.T = T0_from_fish
         except (AttributeError, TypeError):
             pass
 

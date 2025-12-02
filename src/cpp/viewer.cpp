@@ -79,6 +79,11 @@ void bind_viewer(py::module& m)
             "Set the background color (RGB values 0-1)")
 
         .def("set_lighting_factor", &fast_cd_viewer::set_lighting_factor)
+        .def("set_light_position",
+            [](fast_cd_viewer& v, const Eigen::RowVector3d& position) {
+                v.set_light_position(position.transpose());
+            },
+            "Set the light position in world space (Vector3d)")
         .def("set_show_lines", &fast_cd_viewer::set_show_lines)
         .def("get_show_lines", &fast_cd_viewer::get_show_lines)
         .def("set_show_faces", &fast_cd_viewer::set_show_faces)
