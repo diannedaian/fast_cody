@@ -54,7 +54,9 @@ def laplacian_eigenmodes(V, T, m, read_cache=False, cache_dir=None, J=None,
         if constraint_enforcement == "optimal":
             if J is not None:
                 c = J.shape[0]
-                Z = sp.sparse.csc_matrix((c, c))
+                # Add small regularization to zero block to avoid singular mass matrix
+                reg = 1e-10
+                Z = sp.sparse.eye(c, format='csc') * reg
                 L = vstack((hstack((L, J.T)), hstack((J, Z )))).tocsc()
                 M = sp.sparse.block_diag((M, Z)).tocsc()
         print("Computing eigenmodes... may take a while...")

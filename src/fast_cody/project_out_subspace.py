@@ -17,8 +17,8 @@ C'MC - 2 C'MA + mu' C'B
 [ B' 0 ] [ mu ]   [ 0 ]
 
 C = M^-1 (MA - B mu)
-B' C = 0 -> B' M^-1 (MA - B mu) = 0 ->  mu = ( B' M^-1 B) B' A 
-C = A - M^-1 B  (B' M^-1 B)^(-1) B' A 
+B' C = 0 -> B' M^-1 (MA - B mu) = 0 ->  mu = ( B' M^-1 B) B' A
+C = A - M^-1 B  (B' M^-1 B)^(-1) B' A
 
 
 A - n x m subspace matrix
@@ -64,9 +64,14 @@ def project_out_subspace(A, B, M=None):
     if M is None:
         M = sp.sparse.identity(A.shape[0]).tocsc()
 
+    # Add small regularization to zero block to avoid singular matrix
+    # This helps with numerical stability when the constraint matrix has issues
+    reg = 1e-10
     Z = sp.sparse.csc_matrix((B.shape[1], B.shape[1]))
+    # Add regularization to diagonal of zero block to make Q non-singular
+    Z_reg = sp.sparse.eye(B.shape[1], format='csc') * reg
     Bsp = sp.sparse.csc_matrix(B)
-    Q = vstack((hstack([M, Bsp]), hstack((Bsp.T, Z))))
+    Q = vstack((hstack([M, Bsp]), hstack((Bsp.T, Z_reg))))
     # Q = vstack(hstack((M, B)), hstack((B.T, Z)))
 
     z = sp.sparse.csc_matrix((B.shape[1], A.shape[1]))
@@ -74,7 +79,12 @@ def project_out_subspace(A, B, M=None):
     Asp = sp.sparse.csc_matrix(A)
     rhs = vstack(( M @ Asp, z))
 
-    Cmu = umfpack_lu_solve(Q, rhs.todense())
+    try:
+        Cmu = umfpack_lu_solve(Q, rhs.todense())
+    except (ArithmeticError, RuntimeError) as e:
+        # Fallback to scipy solver if umfpack fails
+        import scipy.sparse.linalg
+        Cmu = scipy.sparse.linalg.spsolve(Q, rhs.todense())
     #sp.sparse.linalg.spsolve(Q, rhs)
     C = Cmu[:A.shape[0], :]
     # Cd = C.toarray()

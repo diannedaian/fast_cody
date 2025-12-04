@@ -31,6 +31,16 @@ def skinning_clusters(W, D, T, k, l=2, num_clustering_features=10,
     # need to average the skinning weights over each tet
     assert(T.shape[1] == 4, "only tets implemented so far for clustering")
 
+    # Ensure D matches the number of columns in W (after orthonormalization, W might have fewer columns)
+    # D should be reshaped to (b,) if it's (b, 1), and then sliced to match W
+    D = D.flatten() if D.ndim > 1 else D
+    num_modes_actual = W.shape[1]
+    if len(D) > num_modes_actual:
+        D = D[:num_modes_actual]
+    elif len(D) < num_modes_actual:
+        # If D has fewer elements than W has columns, pad with ones (shouldn't happen normally)
+        D = np.pad(D, (0, num_modes_actual - len(D)), 'constant', constant_values=1.0)
+
     Wt = average_onto_simplex(W, T)
     # Wt2 = Wt / np.power(D, 2)
     Wt = Wt / np.power(D, l)

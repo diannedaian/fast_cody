@@ -619,12 +619,84 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
 
     viewer_base.set_key_callback(key_callback)
 
+    # === BUBBLE PARTICLE SYSTEM ===
+    num_bubbles = 100  # Reduced for performance
+    bubble_speed = 0.3  # units per second
+    bubble_spawn_y = -0.5  # ocean floor level
+    bubble_max_y = 5.0  # respawn when bubbles reach this height
+    bubble_spawn_range_x = (-4.0, 4.0)  # spawn range in X
+    bubble_spawn_range_z = (-4.0, 4.0)  # spawn range in Z
+    bubble_radius = 0.03  # radius of bubble spheres
+
+    # Create a simple octahedron mesh for bubbles (very low poly for performance)
+    def create_bubble_mesh(radius):
+        """Create a simple octahedron mesh (8 faces) for bubbles"""
+        V = np.array([
+            [radius, 0, 0], [-radius, 0, 0],
+            [0, radius, 0], [0, -radius, 0],
+            [0, 0, radius], [0, 0, -radius]
+        ], dtype=np.float64)
+        F = np.array([
+            [0, 2, 4], [0, 4, 3], [0, 3, 5], [0, 5, 2],
+            [1, 4, 2], [1, 3, 4], [1, 5, 3], [1, 2, 5]
+        ], dtype=np.int32)
+        return V, F
+
+    # Create base bubble mesh (octahedron)
+    V_sphere, F_sphere = create_bubble_mesh(bubble_radius)
+
+    # Initialize bubble positions and velocities
+    bubbles = []
+    bubble_mesh_ids = []
+    for i in range(num_bubbles):
+        bubble = {
+            'pos': np.array([
+                random.uniform(bubble_spawn_range_x[0], bubble_spawn_range_x[1]),
+                bubble_spawn_y + random.uniform(0, 0.5),  # slight random height offset
+                random.uniform(bubble_spawn_range_z[0], bubble_spawn_range_z[1])
+            ]),
+            'speed': bubble_speed * random.uniform(0.7, 1.3),  # random speed variation
+        }
+        bubbles.append(bubble)
+
+        # Create a mesh for this bubble
+        bubble_id = viewer_base.add_mesh()
+        bubble_mesh_ids.append(bubble_id)
+
+        # Set sphere mesh at bubble position
+        V_bubble = V_sphere.copy()
+        V_bubble += bubble['pos']
+        viewer_base.set_mesh(V_bubble, F_sphere, bubble_id)
+
+        # Set bubble color (light blue-white)
+        bubble_color = np.array([200, 240, 255]) / 255.0
+        viewer_base.set_color(bubble_color, bubble_id)
+        viewer_base.set_face_based(True, bubble_id)
+        viewer_base.set_show_lines(False, bubble_id)
+
+        # Set up weights and transforms for bubble (static, no animation)
+        num_verts = V_bubble.shape[0]
+        Wp_bubble = np.zeros((num_verts, 16), dtype=np.float64)
+        Wp_bubble[:, 0] = 1.0
+        Ws_bubble = np.zeros((num_verts, 16), dtype=np.float64)
+        viewer_base.set_weights(Wp_bubble, Ws_bubble, bubble_id)
+
+        # Set identity transform
+        p0_bubble = np.zeros((16 * 12, 1), dtype=np.float64)
+        for bone_idx in range(16):
+            base_idx = bone_idx * 12
+            p0_bubble[base_idx + 0] = 1.0
+            p0_bubble[base_idx + 5] = 1.0
+            p0_bubble[base_idx + 10] = 1.0
+        z0_bubble = np.zeros((16 * 12, 1), dtype=np.float64)
+        viewer_base.set_bone_transforms(p0_bubble, z0_bubble, bubble_id)
+
     # Pre-draw callback to update all simulations
     step = 0
     caustics_initialized = [False]  # Use list to make it mutable in nested function
 
     def pre_draw_callback():
-        nonlocal step, active_fish_idx, T0_active, mesh_ids
+        nonlocal step, active_fish_idx, T0_active, mesh_ids, bubbles
 
         # Initialize caustics on first frame (after OpenGL context is ready)
         if enable_caustics and not caustics_initialized[0] and caustics_atlas_path:
@@ -729,6 +801,36 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
                 p0_floor, z0_floor = floor_transforms_ref[floor_id]
                 viewer_base.set_bone_transforms(p0_floor, z0_floor, floor_id)
                 viewer_base.updateGL(floor_id)
+
+        # Update bubble particles
+        import time as time_module
+        if not hasattr(pre_draw_callback, 'last_bubble_update_time'):
+            pre_draw_callback.last_bubble_update_time = time_module.time()
+
+        current_time = time_module.time()
+        dt = current_time - pre_draw_callback.last_bubble_update_time
+        pre_draw_callback.last_bubble_update_time = current_time
+
+        # Update bubble positions (float upward) and update meshes
+        for i, bubble in enumerate(bubbles):
+            # Move bubble upward
+            bubble['pos'][1] += bubble['speed'] * dt
+
+            # Respawn if bubble reaches max height
+            if bubble['pos'][1] > bubble_max_y:
+                bubble['pos'] = np.array([
+                    random.uniform(bubble_spawn_range_x[0], bubble_spawn_range_x[1]),
+                    bubble_spawn_y + random.uniform(0, 0.2),
+                    random.uniform(bubble_spawn_range_z[0], bubble_spawn_range_z[1])
+                ])
+                bubble['speed'] = bubble_speed * random.uniform(0.7, 1.3)
+
+            # Update bubble mesh position
+            bubble_id = bubble_mesh_ids[i]
+            V_bubble = V_sphere.copy()
+            V_bubble += bubble['pos']
+            viewer_base.set_vertices(V_bubble, bubble_id)
+            viewer_base.updateGL(bubble_id)
 
         # Sync guizmo to active fish ONLY if it's not being actively manipulated
         # This prevents overwriting user input during dragging

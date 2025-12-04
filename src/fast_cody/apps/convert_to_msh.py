@@ -240,6 +240,10 @@ def convert_to_msh(
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "tetwild.log"
 
+    # Resolve to absolute paths
+    msh_path = msh_path.resolve()
+    obj_path = obj_path.resolve()
+
     print(f"[CONVERT] Running fTetWild: {tetwild_path}")
     print(f"[CONVERT] Input: {obj_path}")
     print(f"[CONVERT] Output: {msh_path}")
