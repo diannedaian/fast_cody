@@ -39,6 +39,30 @@ uniform float specular_exponent;
          outColor = texture(tex, uv);
     }else
     {
+        // === GRADIENT BACKGROUND ===
+        // Background quad is positioned far back at Z < -15 in world space
+        // DEBUG: Visualize which pixels are being detected as background
+        if (v_worldPos.z < -15.0) {
+            // DEBUG OUTPUT: Show gradient based on screen Y position
+            // This will help us see if the background is being rendered at all
+
+            // Gradient colors (matching reference image)
+            vec3 DEEP_SEA_BLUE = vec3(0.098, 0.165, 0.337);  // Dark indigo-blue #192A56 (bottom)
+            vec3 LIGHT_SEA_CYAN = vec3(0.039, 0.416, 0.459); // Light cyan/teal #0A6A75 (top)
+
+            // Use screen-space Y coordinate to blend between bottom and top
+            float screenT = clamp(gl_FragCoord.y / 1080.0, 0.0, 1.0);
+            vec3 gradient = mix(DEEP_SEA_BLUE, LIGHT_SEA_CYAN, screenT);
+
+            // DEBUG: Make it VERY obvious with bright colors
+            // If you see RED at bottom and GREEN at top, the gradient is working!
+            outColor = vec4(screenT, 1.0 - screenT, 0.0, 1.0);  // Red->Yellow->Green gradient
+
+            // Actual gradient (comment out above line when debug is done)
+            // outColor = vec4(gradient, 1.0);
+            return;
+        }
+
         // Original lighting calculation
         vec3 Ia = La * vec3(Kai);    // ambient intensity
 
@@ -117,6 +141,27 @@ uniform float specular_exponent;
         finalColor.rgb *= 1.0 - shadow * 0.15;  // Reduced from 0.4 to 0.15 (15% max darkening)
 
         if (fixed_color != vec4(0.0)) finalColor = fixed_color;
+
+        // === UNDERWATER DISTANCE FOG ===
+        // Blend objects into deep sea blue based on distance from camera
+        // This creates the atmospheric underwater effect
+
+        // Calculate distance from camera (in eye/view space, camera is at origin)
+        float dist = length(position_eye);
+
+        // Fog settings
+        float fogStart = 5.0;   // Distance where fog begins
+        float fogEnd = 40.0;    // Distance where fog reaches full opacity
+
+        // Calculate fog factor (0.0 = no fog, 1.0 = full fog)
+        float fogFactor = clamp((dist - fogStart) / (fogEnd - fogStart), 0.0, 1.0);
+
+        // Fog color (matches bottom of gradient for seamless integration)
+        vec3 FOG_COLOR = vec3(0.098, 0.165, 0.337);  // Dark indigo-blue #192A56
+
+        // Apply fog: blend object color with fog color based on distance
+        finalColor.rgb = mix(finalColor.rgb, FOG_COLOR, fogFactor);
+
         outColor = finalColor;
     }
  }

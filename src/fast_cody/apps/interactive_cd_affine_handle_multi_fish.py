@@ -49,7 +49,8 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
                                             texture_png_list=None, texture_obj_list=None,
                                             num_fishes=2, fish_positions=None,
                                             enable_caustics=False,
-                                            secondary_motion_scale=1.0, secondary_motion_max=3.0):
+                                            secondary_motion_scale=1.0, secondary_motion_max=3.0,
+                                            active_fish_indices=None, camera_follow_fish=None):
     """
     Runs an interactive fast CD simulation with multiple fishes, floor grid, and optional caustics.
     Each fish can be controlled independently using an affine handle with a Guizmo.
@@ -170,7 +171,10 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
     fishes = []
 
     for fish_idx in range(num_fishes):
-        print(f"Creating fish {fish_idx + 1}/{num_fishes}...")
+        print(f"\n{'='*60}")
+        print(f"Creating fish {fish_idx + 1}/{num_fishes}")
+        print(f"{'='*60}")
+
         V = Vs[fish_idx].copy()
         T = Ts[fish_idx].copy()
 
@@ -303,6 +307,7 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
             'texture_png': texture_png_list[fish_idx] if fish_idx < len(texture_png_list) else None,
             'texture_obj': texture_obj_list[fish_idx] if fish_idx < len(texture_obj_list) else None,
         })
+        print(f"  Fish {fish_idx + 1} created with full simulation")
 
     # Create viewer with multiple meshes
     vertex_shader_path = fc.get_shader("./vertex_shader_16.glsl")
@@ -311,11 +316,10 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
     viewer_base = fcd.fast_cd_viewer_custom_shader(vertex_shader_path,
                                                    fragment_shader_path, 16, 16)
 
-    # Set light position from above to light up the scene
-    # Position light above the scene (y=5.0) centered over the fishes (x=0, z=0)
+    # Light position will be set after OpenGL initialization in pre_draw_callback
+    # to avoid segfault (OpenGL context must be ready before setting uniforms)
     light_position = np.array([0.0, 5.0, 0.0], dtype=np.float64)
-    viewer_base.set_light_position(light_position)
-    print(f"  Light position set to: {light_position}")
+    print(f"  Light position will be set to: {light_position} (after OpenGL init)")
 
     # Add all fish meshes to viewer
     print("Adding meshes to viewer...")
@@ -395,8 +399,68 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
 
     print("All fish meshes added to viewer")
 
+    # === UNDERWATER VISUAL EFFECT: GRADIENT BACKGROUND ===
+    # Create HUGE background wall positioned far behind the scene
+    # This creates the visible gradient effect like in the reference image
+
+    print("\n=== Setting up Underwater Gradient Background ===")
+
+    # Create ONE SINGLE LARGE QUAD for gradient background
+    # TEST: Put it close and small to verify rendering
+    bg_width = 20.0    # Much smaller for testing
+    bg_height = 10.0   # Much smaller for testing
+    bg_depth = -5.0    # Close to camera, should be visible
+
+    # Create single quad vertices
+    # Gradient will be calculated in shader using screen-space Y coordinate
+    bg_V = np.array([
+        [-bg_width/2, -bg_height/2, bg_depth],  # Bottom-left
+        [bg_width/2, -bg_height/2, bg_depth],   # Bottom-right
+        [bg_width/2, bg_height/2, bg_depth],    # Top-right
+        [-bg_width/2, bg_height/2, bg_depth],   # Top-left
+    ], dtype=np.float64)
+
+    # Create triangles
+    bg_F = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int32)
+
+    # Add background quad as single mesh
+    bg_mesh_id = viewer_base.add_mesh()
+    viewer_base.set_mesh(bg_V, bg_F, bg_mesh_id)
+
+    # Set up weights (all zero since background doesn't animate)
+    num_verts = bg_V.shape[0]
+    Wp_bg = np.zeros((num_verts, 16), dtype=np.float64)
+    Wp_bg[:, 0] = 1.0
+    Ws_bg = np.zeros((num_verts, 16), dtype=np.float64)
+    viewer_base.set_weights(Wp_bg, Ws_bg, bg_mesh_id)
+
+    # Set BRIGHT MAGENTA color for debugging - if you see this, the quad is rendering!
+    # This helps us verify the mesh is visible before testing the shader gradient
+    viewer_base.set_color(np.array([1.0, 0.0, 1.0]), bg_mesh_id)  # Bright magenta/purple
+
+    # Set bone transforms (identity)
+    p0_bg = np.zeros((16 * 12, 1), dtype=np.float64)
+    for bone_idx in range(16):
+        base_idx = bone_idx * 12
+        p0_bg[base_idx + 0] = 1.0
+        p0_bg[base_idx + 5] = 1.0
+        p0_bg[base_idx + 10] = 1.0
+    z0_bg = np.zeros((16 * 12, 1), dtype=np.float64)
+    viewer_base.set_bone_transforms(p0_bg, z0_bg, bg_mesh_id)
+
+    # Set rendering properties for background quad
+    viewer_base.set_face_based(False, bg_mesh_id)  # Try smooth shading
+    viewer_base.set_show_lines(True, bg_mesh_id)   # SHOW WIREFRAME for debugging!
+
+    print(f"  Created background gradient: SINGLE QUAD (mesh ID {bg_mesh_id})")
+    print(f"  DEBUG: Mesh has {num_verts} vertices")
+    print(f"  DEBUG: Positioned at Z={bg_depth}, size {bg_width}x{bg_height}")
+    print(f"  DEBUG: Vertices: {bg_V}")
+    print(f"  DEBUG: If you see MAGENTA wireframe quad, mesh is rendering!")
+    print(f"  Shader will render smooth gradient from dark blue (bottom) to light cyan (top)")
+
     # Initialize bone transforms for all fishes
-    print("Initializing bone transforms for all fishes...")
+    print("\nInitializing bone transforms for all fishes...")
     for fish_idx, fish in enumerate(fishes):
         mesh_id = mesh_ids[fish_idx]
         p0 = np.ascontiguousarray(fish['T0'][0:3, :].reshape((12, 1)))
@@ -407,13 +471,20 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
         except Exception as e:
             print(f"  Warning: Could not initialize bone transforms for fish {fish_idx + 1}: {e}")
 
-    # Set background color to ocean blue (#5FBFD2)
-    background_color = np.array([95, 191, 210]) / 255.0
+    # Set background color to match skybox bottom (deep dark blue)
+    # This matches the shader's skyBottom color: vec3(0.02, 0.12, 0.25)
+    background_color = np.array([5, 31, 64]) / 255.0
     viewer_base.set_background_color(background_color)
 
-    # === ADD OCEAN FLOOR (5x5 GRID) ===
+    # === ADD OCEAN FLOOR (3x3 GRID for better performance) ===
     floor_ids_ref = []
     floor_transforms_ref = {}
+    floor_tiles = []  # Will store floor tile data for treadmill technique
+    floor_treadmill_data = [{  # Shared data for treadmill
+        'tile_spacing_x': 0.0,
+        'tile_spacing_z': 0.0,
+        'floor_y_offset': 0.0
+    }]
 
     # Load floor meshes
     try:
@@ -428,17 +499,17 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
         floor_path2 = os.path.join(project_root, "data", "sea_floor2.obj")
 
     try:
-        floor_texture_path = fc.get_data("sandtexture.jpg")
+        floor_texture_path = fc.get_data("sandtexture-light.png")
         if not os.path.exists(floor_texture_path):
             raise FileNotFoundError
     except:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
-        floor_texture_path = os.path.join(project_root, "data", "sandtexture.jpg")
+        floor_texture_path = os.path.join(project_root, "data", "sandtexture-light.png")
 
     if os.path.exists(floor_path1) or os.path.exists(floor_path2):
         try:
-            print(f"\nLoading ocean floor meshes for randomized 5x5 grid...")
+            print(f"\nLoading ocean floor meshes for randomized 3x3 grid...")
 
             floor_mesh1 = load_floor_mesh(floor_path1)
             floor_mesh2 = load_floor_mesh(floor_path2)
@@ -472,25 +543,29 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
             tile_depth = max(tile_depths)
 
             print(f"  Tile dimensions: width={tile_width:.2f}, depth={tile_depth:.2f}")
-            print(f"  Creating 5x5 grid (25 tiles) with randomized floor meshes and overlap...")
+            print(f"  Creating 3x3 grid (9 tiles) with randomized floor meshes and overlap...")
 
-            # Create 5x5 grid of floor tiles
+            # Create 3x3 grid of floor tiles (reduced from 5x5 for performance)
             num_bones = 16
             num_modes_floor = 16
-            floor_tiles = []
 
             overlap_factor = 0.9
             tile_spacing_x = tile_width * overlap_factor
             tile_spacing_z = tile_depth * overlap_factor
 
+            # Store treadmill data for later use
+            floor_treadmill_data[0]['tile_spacing_x'] = tile_spacing_x
+            floor_treadmill_data[0]['tile_spacing_z'] = tile_spacing_z
+            floor_treadmill_data[0]['floor_y_offset'] = floor_y_offset
+
             random.seed(42)
 
-            for i in range(5):  # rows
-                for j in range(5):  # columns
+            for i in range(3):  # rows (reduced from 5)
+                for j in range(3):  # columns (reduced from 5)
                     V_floor_base, F_floor, TC_floor, FTC_floor, mesh_name = random.choice(floor_options)
 
-                    x_offset = (j - 2) * tile_spacing_x
-                    z_offset = (i - 2) * tile_spacing_z
+                    x_offset = (j - 1) * tile_spacing_x  # Changed from (j-2) to (j-1) for 3x3 grid
+                    z_offset = (i - 1) * tile_spacing_z  # Changed from (i-2) to (i-1) for 3x3 grid
 
                     V_floor_scaled = V_floor_base * tile_scale
                     V_floor_tile = V_floor_scaled.copy()
@@ -541,7 +616,8 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
 
                     floor_ids_ref.append(floor_id)
                     floor_transforms_ref[floor_id] = (p0_floor, z0_floor)
-                    floor_tiles.append((floor_id, i, j, x_offset, z_offset, mesh_name))
+                    # Store: (floor_id, grid_i, grid_j, original_vertices, faces, texture_coords, texture_faces)
+                    floor_tiles.append((floor_id, i, j, V_floor_scaled.copy(), F_floor, TC_floor, FTC_floor, mesh_name))
 
                     print(f"  Tile ({i},{j}): mesh ID {floor_id}, offset=({x_offset:.2f}, {z_offset:.2f}), mesh={mesh_name}")
 
@@ -555,6 +631,98 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
     else:
         print(f"Floor files not found")
         print("Continuing without floor...")
+
+    # === ADD DECORATIVE ROCKS AROUND THE FLOOR ===
+    rock_ids_ref = []
+    rock_transforms_ref = {}
+    try:
+        # Load rock model from Archive - use fast_cody module path for reliability
+        import fast_cody
+        fc_module_dir = os.path.dirname(fast_cody.__file__)
+        # Go up two levels: fast_cody module -> src -> fast_cody project root
+        fc_src_dir = os.path.dirname(fc_module_dir)
+        fc_project_root = os.path.dirname(fc_src_dir)
+        rock_path = os.path.join(fc_project_root, "data", "Archive", "4400rocks.obj")
+
+        print(f"\n=== DEBUG: Rock Loading ===")
+        print(f"  fast_cody module at: {fc_module_dir}")
+        print(f"  Looking for rocks at: {rock_path}")
+        print(f"  Rock file exists: {os.path.exists(rock_path)}")
+
+        if os.path.exists(rock_path):
+            print(f"\n=== Adding Decorative Rocks (same as floor loading) ===")
+            print(f"Loading rocks from: {rock_path}")
+
+            # Load rock mesh (same as floor)
+            [V_rock_base, TC_rock, N_rock, F_rock, FTC_rock, FN_rock] = fcd.readOBJ_tex(rock_path)
+            print(f"  Rock mesh loaded: {V_rock_base.shape[0]} vertices, {F_rock.shape[0]} faces")
+
+            # Scale rocks same as floor tiles
+            rock_scale = 0.05  # Same as floor tiles
+            floor_y_offset = -0.5  # Floor surface level
+            rock_y_offset = -0.4  # Rocks sit clearly ON TOP of floor
+
+            # Define rock position - single decorative rock on the sea floor
+            rock_positions = [
+                [0.0, rock_y_offset, -3.0],     # Center
+            ]
+
+            num_bones = 16
+            num_modes_rock = 16
+
+            for idx, pos in enumerate(rock_positions):
+                # Scale and position rock (EXACTLY like floor)
+                V_rock_scaled = V_rock_base * rock_scale
+                V_rock_tile = V_rock_scaled.copy()
+                V_rock_tile[:, 0] += pos[0]
+                V_rock_tile[:, 1] += pos[1]
+                V_rock_tile[:, 2] += pos[2]
+                V_rock_tile = np.ascontiguousarray(V_rock_tile, dtype=np.float64)
+
+                # Add rock mesh to viewer (EXACTLY like floor)
+                rock_id = viewer_base.add_mesh()
+                viewer_base.set_mesh(V_rock_tile, F_rock, rock_id)
+
+                # Set rock color (gray/brown stone color) - single color for the mesh
+                rock_color = np.array([[0.47, 0.43, 0.39]])  # Row vector [1, 3] format required
+                viewer_base.set_color(rock_color, rock_id)
+                viewer_base.set_face_based(True, rock_id)
+                viewer_base.invert_normals(True, rock_id)  # SAME as floor!
+                viewer_base.set_show_lines(False, rock_id)
+
+                # Get vertex count for weights setup
+                num_verts = V_rock_tile.shape[0]
+
+                # Set up weights (EXACTLY like floor)
+                Wp_rock = np.zeros((num_verts, num_bones), dtype=np.float64)
+                Wp_rock[:, 0] = 1.0
+                Ws_rock = np.zeros((num_verts, num_modes_rock), dtype=np.float64)
+                viewer_base.set_weights(Wp_rock, Ws_rock, rock_id)
+
+                # Set identity bone transforms (EXACTLY like floor)
+                p0_rock = np.zeros((num_bones * 12, 1), dtype=np.float64)
+                for bone_idx in range(num_bones):
+                    base_idx = bone_idx * 12
+                    p0_rock[base_idx + 0] = 1.0
+                    p0_rock[base_idx + 5] = 1.0
+                    p0_rock[base_idx + 10] = 1.0
+                z0_rock = np.zeros((num_modes_rock * 12, 1), dtype=np.float64)
+
+                viewer_base.set_bone_transforms(p0_rock, z0_rock, rock_id)
+
+                rock_ids_ref.append(rock_id)
+                rock_transforms_ref[rock_id] = (p0_rock, z0_rock)  # Store like floor!
+                print(f"  Rock {idx + 1}: mesh ID {rock_id}, position={pos}, vertices={num_verts}, color={rock_color}")
+
+            print(f"\n✓ Rocks loaded successfully: {len(rock_positions)} rocks")
+            print(f"  Rock scale: {rock_scale}, Y offset: {rock_y_offset}")
+        else:
+            print(f"\n  Rock model not found at {rock_path}, skipping rocks")
+    except Exception as e:
+        print(f"\n  ERROR loading rocks: {e}")
+        import traceback
+        traceback.print_exc()
+        print("  Continuing without rocks...")
 
     # === PREPARE CAUSTICS (but don't load yet - needs OpenGL context) ===
     caustics_atlas_path = None
@@ -592,7 +760,7 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
 
     # Key callback to switch between fishes
     def key_callback(key, modifier):
-        nonlocal active_fish_idx, transform_mode, T0_active
+        nonlocal active_fish_idx, transform_mode, T0_active, camera_mode
 
         # Switch active fish with number keys
         if key >= ord('1') and key <= ord('9'):
@@ -615,12 +783,93 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
             viewer_base.change_guizmo_op(transform_mode)
             return True
 
+        # Toggle camera mode (third-person / first-person)
+        if key == ord('v') or key == ord('V'):
+            if camera_mode[0] == 'third_person':
+                camera_mode[0] = 'first_person'
+                print(f"Camera mode: FIRST-PERSON (following fish {active_fish_idx + 1})")
+            else:
+                camera_mode[0] = 'third_person'
+                print(f"Camera mode: THIRD-PERSON (static overview)")
+            return True
+
+        # Save fish positions to file
+        if key == ord('s') or key == ord('S'):
+            save_path = "fish_positions.json"
+            try:
+                positions_data = []
+                for fish_idx, fish in enumerate(fishes):
+                    T0 = fish['T0']
+                    position = T0[0:3, 3].tolist()  # Extract position from transform
+                    rotation = T0[0:3, 0:3].tolist()  # Extract rotation matrix
+                    positions_data.append({
+                        'fish_idx': fish_idx,
+                        'position': position,
+                        'rotation': rotation
+                    })
+
+                import json
+                with open(save_path, 'w') as f:
+                    json.dump(positions_data, f, indent=2)
+                print(f"\n✓ Saved positions of {len(fishes)} fish to {save_path}")
+                return True
+            except Exception as e:
+                print(f"\n✗ Failed to save positions: {e}")
+                return False
+
+        # Load fish positions from file
+        if key == ord('l') or key == ord('L'):
+            load_path = "fish_positions.json"
+            try:
+                import json
+                import os
+                if not os.path.exists(load_path):
+                    print(f"\n✗ No saved positions found at {load_path}")
+                    return False
+
+                with open(load_path, 'r') as f:
+                    positions_data = json.load(f)
+
+                # Update fish positions
+                loaded_count = 0
+                skipped_count = 0
+                for data in positions_data:
+                    fish_idx = data['fish_idx']
+                    if fish_idx < len(fishes):
+                        position = np.array(data['position'], dtype=np.float32)
+                        rotation = np.array(data['rotation'], dtype=np.float32)
+
+                        # Reconstruct T0 transform
+                        T0_new = fishes[fish_idx]['T0'].copy()
+                        T0_new[0:3, 0:3] = rotation
+                        T0_new[0:3, 3] = position
+                        fishes[fish_idx]['T0'] = T0_new
+                        loaded_count += 1
+                    else:
+                        skipped_count += 1
+
+                # Update active fish guizmo
+                T0_active = fishes[active_fish_idx]['T0'].copy().astype(dtype=np.float32, order="F")
+                viewer_base.init_guizmo(True, T0_active, guizmo_callback, transform_mode)
+
+                print(f"\n✓ Loaded positions for {loaded_count} fish from {load_path}")
+                if skipped_count > 0:
+                    print(f"  Note: {skipped_count} saved positions skipped (not enough fish in current scene)")
+                if len(fishes) > len(positions_data):
+                    print(f"  Note: {len(fishes) - len(positions_data)} fish not in saved file (using default positions)")
+                return True
+            except Exception as e:
+                print(f"\n✗ Failed to load positions: {e}")
+                import traceback
+                traceback.print_exc()
+                return False
+
         return False
 
     viewer_base.set_key_callback(key_callback)
 
     # === BUBBLE PARTICLE SYSTEM ===
-    num_bubbles = 100  # Reduced for performance
+    num_bubbles = 30  # Reduced for performance (was 100)
     bubble_speed = 0.3  # units per second
     bubble_spawn_y = -0.5  # ocean floor level
     bubble_max_y = 5.0  # respawn when bubbles reach this height
@@ -628,22 +877,44 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
     bubble_spawn_range_z = (-4.0, 4.0)  # spawn range in Z
     bubble_radius = 0.03  # radius of bubble spheres
 
-    # Create a simple octahedron mesh for bubbles (very low poly for performance)
-    def create_bubble_mesh(radius):
-        """Create a simple octahedron mesh (8 faces) for bubbles"""
-        V = np.array([
-            [radius, 0, 0], [-radius, 0, 0],
-            [0, radius, 0], [0, -radius, 0],
-            [0, 0, radius], [0, 0, -radius]
-        ], dtype=np.float64)
-        F = np.array([
-            [0, 2, 4], [0, 4, 3], [0, 3, 5], [0, 5, 2],
-            [1, 4, 2], [1, 3, 4], [1, 5, 3], [1, 2, 5]
-        ], dtype=np.int32)
+    # Create a smooth sphere mesh for bubbles using UV sphere subdivision
+    def create_bubble_mesh(radius, resolution=8):
+        """Create a smooth sphere mesh using UV sphere (latitude/longitude subdivision)"""
+        vertices = []
+        faces = []
+
+        # Generate vertices using spherical coordinates
+        for i in range(resolution + 1):  # latitude
+            theta = i * np.pi / resolution  # 0 to pi
+            sin_theta = np.sin(theta)
+            cos_theta = np.cos(theta)
+
+            for j in range(resolution):  # longitude
+                phi = j * 2 * np.pi / resolution  # 0 to 2*pi
+                x = radius * sin_theta * np.cos(phi)
+                y = radius * cos_theta
+                z = radius * sin_theta * np.sin(phi)
+                vertices.append([x, y, z])
+
+        # Generate faces (triangles)
+        for i in range(resolution):
+            for j in range(resolution):
+                # Current quad vertices
+                v0 = i * resolution + j
+                v1 = i * resolution + (j + 1) % resolution
+                v2 = (i + 1) * resolution + (j + 1) % resolution
+                v3 = (i + 1) * resolution + j
+
+                # Split quad into two triangles
+                faces.append([v0, v1, v2])
+                faces.append([v0, v2, v3])
+
+        V = np.array(vertices, dtype=np.float64)
+        F = np.array(faces, dtype=np.int32)
         return V, F
 
-    # Create base bubble mesh (octahedron)
-    V_sphere, F_sphere = create_bubble_mesh(bubble_radius)
+    # Create base bubble mesh (smooth sphere with 8x8 resolution)
+    V_sphere, F_sphere = create_bubble_mesh(bubble_radius, resolution=8)
 
     # Initialize bubble positions and velocities
     bubbles = []
@@ -694,9 +965,62 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
     # Pre-draw callback to update all simulations
     step = 0
     caustics_initialized = [False]  # Use list to make it mutable in nested function
+    light_initialized = [False]  # Use list to make it mutable in nested function
+    camera_initialized = [False]  # Use list to make it mutable in nested function
+    camera_mode = ['third_person']  # 'third_person' or 'first_person'
+
+    # Treadmill technique: track last grid position to update floor tiles
+    last_grid_pos = [np.array([0.0, 0.0])]  # [x_grid, z_grid]
 
     def pre_draw_callback():
-        nonlocal step, active_fish_idx, T0_active, mesh_ids, bubbles
+        nonlocal step, active_fish_idx, T0_active, mesh_ids, bubbles, light_position, camera_mode, last_grid_pos
+
+        # Initialize camera position on first frame to see all fishes
+        if not camera_initialized[0]:
+            try:
+                print("\n=== Initializing Camera Position (frame 0) ===")
+                if hasattr(viewer_base, 'set_camera_eye') and hasattr(viewer_base, 'set_camera_center'):
+                    # Calculate scene bounds to position camera appropriately
+                    # Fishes span: X[-5.6, 4.3], Y[0.4, 5.0], Z[-6.2, 0.7]
+                    # Set camera high up and far back to see all fishes
+                    camera_eye = np.array([[0.0, 10.0, 12.0]])  # High up and far back (row vector)
+                    camera_center = np.array([[0.0, 2.5, -3.0]])  # Look at center of fish cluster (row vector)
+
+                    viewer_base.set_camera_eye(camera_eye)
+                    viewer_base.set_camera_center(camera_center)
+
+                    print(f"  Camera position set: eye=[0, 10, 12], center=[0, 2.5, -3]")
+                    print(f"  All {num_fishes} fishes and floor should be visible")
+                    print(f"  Press 'v' to toggle between third-person and first-person camera")
+                    camera_initialized[0] = True
+                    print("=== Camera Initialization Complete ===\n")
+                else:
+                    print("  WARNING: set_camera methods not available, using default camera")
+                    camera_initialized[0] = True
+            except Exception as e:
+                print(f"  ERROR initializing camera: {e}")
+                import traceback
+                traceback.print_exc()
+                camera_initialized[0] = True  # Don't try again
+
+        # Initialize light position on first frame (after OpenGL context is ready)
+        if not light_initialized[0]:
+            try:
+                print("\n=== Initializing Light Position (frame 0) ===")
+                if hasattr(viewer_base, 'set_light_position'):
+                    viewer_base.set_light_position(light_position)
+                    print(f"  Light position set to: {light_position}")
+                    print(f"  Underwater gradient enabled in shader (world-space Y)")
+                    light_initialized[0] = True
+                    print("=== Light Initialization Complete ===\n")
+                else:
+                    print("  ERROR: set_light_position method not available")
+                    light_initialized[0] = True  # Don't try again
+            except Exception as e:
+                print(f"  ERROR initializing light: {e}")
+                import traceback
+                traceback.print_exc()
+                light_initialized[0] = True  # Don't try again
 
         # Initialize caustics on first frame (after OpenGL context is ready)
         if enable_caustics and not caustics_initialized[0] and caustics_atlas_path:
@@ -707,9 +1031,9 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
                     viewer_base.set_caustics_atlas(caustics_atlas_path)
                     print(f"  Caustics atlas loaded successfully")
 
-                    # Set shader uniforms for all meshes (fish + floor)
+                    # Set shader uniforms for all meshes (fish + floor + rocks)
                     if hasattr(viewer_base, 'set_uniform'):
-                        all_mesh_ids = mesh_ids + floor_ids_ref
+                        all_mesh_ids = mesh_ids + floor_ids_ref + rock_ids_ref
                         print(f"  Setting uniforms for {len(all_mesh_ids)} meshes...")
 
                         for i, mesh_id in enumerate(all_mesh_ids):
@@ -729,6 +1053,35 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
                 import traceback
                 traceback.print_exc()
                 caustics_initialized[0] = True  # Don't try again
+
+        # Camera update: ONLY update in first-person mode (let user control third-person manually)
+        if camera_mode[0] == 'first_person':
+            if hasattr(viewer_base, 'set_camera_eye') and hasattr(viewer_base, 'set_camera_center'):
+                try:
+                    # Use active_fish_idx instead of camera_follow_fish for following
+                    if active_fish_idx < len(fishes):
+                        fish_to_follow = fishes[active_fish_idx]
+                        fish_position = fish_to_follow['T0'][0:3, 3]  # Extract position from transform
+
+                        # Get fish rotation matrix to orient camera
+                        R = fish_to_follow['T0'][0:3, 0:3]
+                        forward = R[:, 0]  # Fish's forward direction
+                        up = R[:, 2]       # Fish's up direction
+
+                        # Camera positioned behind and above the fish
+                        camera_distance = 3.0
+                        camera_height = 1.0
+                        camera_eye = fish_position - forward * camera_distance + up * camera_height
+
+                        # Look ahead of the fish
+                        look_ahead = 1.5
+                        camera_center = fish_position + forward * look_ahead
+
+                        viewer_base.set_camera_center(np.array([camera_center]).reshape(1, 3))
+                        viewer_base.set_camera_eye(np.array([camera_eye]).reshape(1, 3))
+                except Exception as e:
+                    if step % 60 == 0:  # Print error occasionally
+                        print(f"Camera update failed: {e}")
 
         # Update all fishes
         for fish_idx, fish in enumerate(fishes):
@@ -750,29 +1103,33 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
                 # The key is that the simulation sees the absolute transform, not relative
                 p = np.ascontiguousarray(T0_current[0:3, :].reshape((12, 1)), dtype=np.float64)
 
-                # Step simulation with relative transform (prevents position offset from affecting simulation)
-                z = fish['sim'].step(p, fish['st'])
+                # Check if this fish should have active simulation (secondary motion)
+                # If active_fish_indices is None, all fish are active
+                # If active_fish_indices is provided, only those fish have secondary motion
+                has_secondary_motion = (active_fish_indices is None) or (fish_idx in active_fish_indices)
 
-                # Apply scaling and clamping to secondary motion to prevent excessive deformation
-                # This prevents the mesh from "flying around" when manipulated
-                # The issue is that fish 2 and 3 may have unstable secondary motion
+                # Step simulation with relative transform (prevents position offset from affecting simulation)
+                if has_secondary_motion:
+                    z = fish['sim'].step(p, fish['st'])
+                else:
+                    # No secondary motion - use zero vector
+                    z = np.zeros_like(fish['st'].z)
+
+                # Apply scaling to secondary motion
                 z_scaled = z * secondary_motion_scale
 
-                # Clamp the magnitude of secondary motion to prevent instability
-                # This is critical for preventing exaggerated motion in fish 2 and 3
-                z_norm = np.linalg.norm(z_scaled)
-                if z_norm > secondary_motion_max:
-                    z_scaled = z_scaled / z_norm * secondary_motion_max
-                    # Debug: print when clamping occurs (only for fish 2 and 3, and only occasionally)
-                    if fish_idx > 0 and step % 60 == 0:
-                        print(f"  [Fish {fish_idx + 1}] Clamped secondary motion: norm={z_norm:.2f} -> {secondary_motion_max:.2f}")
+                # DEBUG: Print secondary motion magnitude every 60 frames
+                if step % 60 == 0:
+                    z_original_norm = np.linalg.norm(z)
+                    motion_status = "ACTIVE" if has_secondary_motion else "STATIC (no secondary motion)"
+                    print(f"  [Fish {fish_idx + 1}] {motion_status}: z_norm={z_original_norm:.4f}, scale={secondary_motion_scale}")
 
-                # Update state with clamped/scaled secondary motion
-                # IMPORTANT: Update state with the clamped value to prevent accumulation
+                # NO CLAMPING - let all fish have natural secondary motion
+                # Update state with secondary motion
                 fish['st'].update(z_scaled, p)
 
                 # For rendering, use full T0 (with position offset) so fish appears at correct location
-                # But use the clamped/scaled secondary motion
+                # Use the scaled secondary motion (no clamping)
                 p_render = np.ascontiguousarray(T0_current[0:3, :].reshape((12, 1)), dtype=np.float64)
                 z_contiguous = np.ascontiguousarray(z_scaled)
 
@@ -790,8 +1147,8 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
                 pre_draw_callback.start_time = time_module.time()
             current_time = time_module.time() - pre_draw_callback.start_time
 
-            # Set time uniform for all meshes (fish + floor)
-            all_mesh_ids = mesh_ids + floor_ids_ref
+            # Set time uniform for all meshes (fish + floor + rocks)
+            all_mesh_ids = mesh_ids + floor_ids_ref + rock_ids_ref
             for mesh_id in all_mesh_ids:
                 viewer_base.set_uniform("u_time", float(current_time), mesh_id)
 
@@ -801,6 +1158,13 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
                 p0_floor, z0_floor = floor_transforms_ref[floor_id]
                 viewer_base.set_bone_transforms(p0_floor, z0_floor, floor_id)
                 viewer_base.updateGL(floor_id)
+
+        # Update all rocks (EXACTLY like floor tiles)
+        for rock_id in rock_ids_ref:
+            if rock_id in rock_transforms_ref:
+                p0_rock, z0_rock = rock_transforms_ref[rock_id]
+                viewer_base.set_bone_transforms(p0_rock, z0_rock, rock_id)
+                viewer_base.updateGL(rock_id)
 
         # Update bubble particles
         import time as time_module
@@ -831,6 +1195,53 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
             V_bubble += bubble['pos']
             viewer_base.set_vertices(V_bubble, bubble_id)
             viewer_base.updateGL(bubble_id)
+
+        # === INFINITE FLOOR: Treadmill Technique ===
+        # Reposition floor tiles to follow camera and create infinite appearance
+        if hasattr(viewer_base, 'igl_v') and len(floor_tiles) > 0:
+            try:
+                # Get treadmill data
+                tile_spacing_x = floor_treadmill_data[0]['tile_spacing_x']
+                tile_spacing_z = floor_treadmill_data[0]['tile_spacing_z']
+                floor_y_offset = floor_treadmill_data[0]['floor_y_offset']
+
+                if tile_spacing_x > 0 and tile_spacing_z > 0:
+                    # Get camera position (X, Z)
+                    camera_eye = viewer_base.igl_v.core().camera_eye
+                    camera_x, camera_z = float(camera_eye[0]), float(camera_eye[2])
+
+                    # Calculate which "grid tile" the camera is in
+                    # Snap to multiples of tile_spacing
+                    grid_x = np.floor(camera_x / tile_spacing_x)
+                    grid_z = np.floor(camera_z / tile_spacing_z)
+
+                    # Check if camera moved to a new grid tile
+                    if grid_x != last_grid_pos[0][0] or grid_z != last_grid_pos[0][1]:
+                        # Update floor tile positions
+                        for floor_data in floor_tiles:
+                            floor_id, i, j, V_orig, F, TC, FTC, mesh_name = floor_data
+
+                            # Calculate new offset: keep 3x3 grid centered on camera grid position
+                            new_x_offset = (j - 1) * tile_spacing_x + grid_x * tile_spacing_x
+                            new_z_offset = (i - 1) * tile_spacing_z + grid_z * tile_spacing_z
+
+                            # Apply new offset to original vertices
+                            V_updated = V_orig.copy()
+                            V_updated[:, 0] += new_x_offset
+                            V_updated[:, 1] += floor_y_offset
+                            V_updated[:, 2] += new_z_offset
+                            V_updated = np.ascontiguousarray(V_updated, dtype=np.float64)
+
+                            # Update mesh vertices
+                            viewer_base.set_vertices(V_updated, floor_id)
+                            viewer_base.updateGL(floor_id)
+
+                        # Update last grid position
+                        last_grid_pos[0] = np.array([grid_x, grid_z])
+                        print(f"[Treadmill] Floor repositioned to grid ({grid_x:.0f}, {grid_z:.0f})")
+            except Exception as e:
+                if step == 0:  # Only print on first frame
+                    print(f"Treadmill update skipped: {e}")
 
         # Sync guizmo to active fish ONLY if it's not being actively manipulated
         # This prevents overwriting user input during dragging
@@ -866,13 +1277,48 @@ def interactive_cd_affine_handle_multi_fish(msh_files=None, Vs=None, Ts=None, Ws
     print("=" * 60)
     print(f"  Number of fishes: {num_fishes}")
     print(f"  Number of floor tiles: {len(floor_ids_ref)}")
-    print(f"  Total meshes: {len(mesh_ids) + len(floor_ids_ref)}")
+    print(f"  Number of rocks: {len(rock_ids_ref)}")
+    print(f"  Total meshes: {len(mesh_ids) + len(floor_ids_ref) + len(rock_ids_ref)}")
     print(f"  Caustics enabled: {enable_caustics}")
     print("  Controls:")
     print("    1-9        Switch active fish")
     print("    g          Toggle Guizmo transform mode (translate/rotate/scale)")
-    print("    c          Toggle secondary motion (if supported)")
+    print("    v          Toggle camera mode (third-person / first-person)")
+    print("    s          Save current fish positions to fish_positions.json")
+    print("    l          Load fish positions from fish_positions.json")
+    print("    Mouse      Drag to rotate, scroll to zoom")
     print("=" * 60)
+
+    # Set initial camera position BEFORE launching viewer
+    print("\nSetting initial camera position...")
+    try:
+        # Try multiple approaches to set the camera
+        if hasattr(viewer_base, 'igl_v'):
+            # Direct access to igl viewer core
+            core = viewer_base.igl_v.core()
+            # Position camera high above to see all fishes
+            # Fishes span: X[-5.6, 4.3], Y[0.4, 5.0], Z[-6.2, 0.7]
+            core.camera_eye = np.array([0.0, 15.0, 15.0], dtype=np.float32)
+            core.camera_center = np.array([0.0, 2.0, -2.5], dtype=np.float32)
+            core.camera_up = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+
+            # Don't set zoom values - let libigl handle zoom naturally with scroll wheel
+            # The single-fish version doesn't set zoom and works fine
+
+            print(f"  Camera set via igl_v.core(): eye=[0, 15, 15], center=[0, 2, -2.5]")
+        elif hasattr(viewer_base, 'set_camera_eye') and hasattr(viewer_base, 'set_camera_center'):
+            # Use the custom methods
+            initial_eye = np.array([[0.0, 15.0, 15.0]])
+            initial_center = np.array([[0.0, 2.0, -2.5]])
+            viewer_base.set_camera_eye(initial_eye)
+            viewer_base.set_camera_center(initial_center)
+            print(f"  Camera set via methods: eye=[0, 15, 15], center=[0, 2, -2.5]")
+        else:
+            print("  Warning: No camera methods available")
+    except Exception as e:
+        print(f"  Warning: Could not set initial camera: {e}")
+        import traceback
+        traceback.print_exc()
 
     print("\nLaunching viewer (this will initialize OpenGL context)...")
     try:

@@ -87,5 +87,8 @@ interactive_cd_affine_handle_multi_fish(
     texture_png_list=texture_png_list,
     texture_obj_list=texture_obj_list,
     fish_positions=fish_positions,
-    enable_caustics=True
+    enable_caustics=True,
+    active_fish_indices=[0, 1],  # Only fish 0 and 1 have active simulation (fish 2-7 are static)
+    camera_follow_fish=0,         # Camera follows fish 0
+    secondary_motion_scale=0.9    # Same as safe mode for consistency
 )

@@ -79,11 +79,12 @@ void bind_viewer(py::module& m)
             "Set the background color (RGB values 0-1)")
 
         .def("set_lighting_factor", &fast_cd_viewer::set_lighting_factor)
-        .def("set_light_position",
-            [](fast_cd_viewer& v, const Eigen::RowVector3d& position) {
-                v.set_light_position(position.transpose());
-            },
-            "Set the light position in world space (Vector3d)")
+        // Note: set_light_position is only available in fast_cd_viewer_custom_shader
+        // .def("set_light_position",
+        //     [](fast_cd_viewer& v, const Eigen::RowVector3d& position) {
+        //         v.set_light_position(position.transpose());
+        //     },
+        //     "Set the light position in world space (Vector3d)")
         .def("set_show_lines", &fast_cd_viewer::set_show_lines)
         .def("get_show_lines", &fast_cd_viewer::get_show_lines)
         .def("set_show_faces", &fast_cd_viewer::set_show_faces)
@@ -191,6 +192,23 @@ void bind_viewer(py::module& m)
             },
             py::arg("uniform_name"), py::arg("value"), py::arg("id") = 0,
             "Set a float uniform for a specific mesh")
+
+        .def("set_light_position",
+            [](fast_cd_viewer_custom_shader& v, const Eigen::RowVector3d& position) {
+                v.set_light_position(position.transpose());
+            },
+            py::arg("position"),
+            "Set the light position in world space (Vector3d)")
+
+        .def("set_camera_eye", &fast_cd_viewer_custom_shader::set_camera_eye,
+            py::arg("eye"),
+            "Set the camera eye position (RowVector3d)")
+        .def("set_camera_center", &fast_cd_viewer_custom_shader::set_camera_center,
+            py::arg("center"),
+            "Set the camera center/target position (RowVector3d)")
+        .def("set_camera_zoom", &fast_cd_viewer_custom_shader::set_camera_zoom,
+            py::arg("zoom"),
+            "Set the camera zoom level (float)")
 
         .def("updateGL", &fast_cd_viewer_custom_shader::updateGL);
 
