@@ -1,0 +1,1079 @@
+=== STDOUT ===
+6 10 12 2 9 5 16 13 0 14 4 1 19 8 18 11 3 17 15 7 
+TBB threads 8
+bbox_diag_length = 1.3511
+ideal_edge_length = 0.067555
+stage = 2
+eps_input = 0.0013511
+eps = 0.000747955
+eps_simplification = 0.000598364
+eps_coplanar = 1.3511e-06
+dd = 0.000900733
+dd_simplification = 0.000720586
+collapsing 10.2343
+swapping 0.0506362
+#boundary_e1 = 572
+#boundary_e2 = 4
+#boundary_e1 = 572
+#boundary_e2 = 4
+known_surface_fs.size = 0
+known_not_surface_fs.size = 0
+initializing...
+edge collapsing...
+fixed 0 tangled element
+success(env) = 19156
+success = 22179(112139)
+success(env) = 927
+success = 1122(39114)
+success(env) = 163
+success = 183(23475)
+success(env) = 28
+success = 31(7224)
+success(env) = 6
+success = 7(1612)
+success(env) = 3
+success = 3(349)
+success(env) = 0
+success = 0(268)
+edge collapsing done!
+time = 4.23521s
+#v = 3938
+#t = 22754
+max_energy = 24684.9
+avg_energy = 19.3908
+//////////////// pass 0 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 6534(6534)
+edge splitting done!
+time = 0.0470207s
+#v = 10472
+#t = 57098
+max_energy = 24684.9
+avg_energy = 14.0527
+edge collapsing...
+fixed 0 tangled element
+success(env) = 43
+success = 5053(51384)
+success(env) = 16
+success = 130(25884)
+success(env) = 3
+success = 11(5286)
+success(env) = 1
+success = 2(815)
+success(env) = 0
+success = 2(172)
+success(env) = 0
+success = 0(147)
+edge collapsing done!
+time = 0.919546s
+#v = 5274
+#t = 29036
+max_energy = 24684.9
+avg_energy = 14.0648
+edge swapping...
+fixed 0 tangled element
+success3 = 2647
+success4 = 3478
+success5 = 547
+success = 6672(29786)
+edge swapping done!
+time = 0.536209s
+#v = 5274
+#t = 26936
+max_energy = 4465.9
+avg_energy = 8.57954
+vertex smoothing...
+success = 2612(4384)
+vertex smoothing done!
+time = 0.421602s
+#v = 5274
+#t = 26936
+max_energy = 4465.9
+avg_energy = 6.91523
+//////////////// pass 1 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 2572(2572)
+edge splitting done!
+time = 0.0395404s
+#v = 7846
+#t = 38626
+max_energy = 4465.9
+avg_energy = 6.12378
+edge collapsing...
+fixed 0 tangled element
+success(env) = 355
+success = 2609(45216)
+success(env) = 32
+success = 134(23658)
+success(env) = 2
+success = 11(4498)
+success(env) = 1
+success = 4(351)
+success(env) = 0
+success = 0(248)
+edge collapsing done!
+time = 0.809997s
+#v = 5088
+#t = 26226
+max_energy = 1163.94
+avg_energy = 5.86631
+edge swapping...
+fixed 0 tangled element
+success3 = 513
+success4 = 1546
+success5 = 170
+success = 2229(19225)
+edge swapping done!
+time = 0.223397s
+#v = 5088
+#t = 25883
+max_energy = 1163.94
+avg_energy = 5.60068
+vertex smoothing...
+success = 2540(4228)
+vertex smoothing done!
+time = 0.291476s
+#v = 5088
+#t = 25883
+max_energy = 897.077
+avg_energy = 5.32111
+//////////////// pass 2 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 2175(2175)
+edge splitting done!
+time = 0.0469595s
+#v = 7263
+#t = 35139
+max_energy = 897.077
+avg_energy = 5.03758
+edge collapsing...
+fixed 0 tangled element
+success(env) = 72
+success = 1956(42283)
+success(env) = 8
+success = 84(12765)
+success(env) = 0
+success = 8(1663)
+success(env) = 0
+success = 0(120)
+edge collapsing done!
+time = 0.50586s
+#v = 5215
+#t = 26498
+max_energy = 897.077
+avg_energy = 5.25407
+edge swapping...
+fixed 0 tangled element
+success3 = 189
+success4 = 872
+success5 = 89
+success = 1150(17132)
+edge swapping done!
+time = 0.162183s
+#v = 5215
+#t = 26398
+max_energy = 897.077
+avg_energy = 5.17692
+vertex smoothing...
+success = 2467(4311)
+vertex smoothing done!
+time = 0.390276s
+#v = 5215
+#t = 26398
+max_energy = 897.077
+avg_energy = 5.06947
+updating sclaing field ...
+filter_energy = 8.97077
+is_hit_min_edge_length = 0
+enlarge envelope, eps = 0.000831061
+//////////////// pass 3 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 6535(6535)
+edge splitting done!
+time = 0.34904s
+#v = 11750
+#t = 59520
+max_energy = 897.077
+avg_energy = 4.69284
+edge collapsing...
+fixed 0 tangled element
+success(env) = 249
+success = 4239(51040)
+success(env) = 21
+success = 341(22914)
+success(env) = 0
+success = 39(5325)
+success(env) = 2
+success = 16(681)
+success(env) = 1
+success = 3(384)
+success(env) = 0
+success = 1(88)
+success(env) = 0
+success = 0(20)
+edge collapsing done!
+time = 1.4092s
+#v = 7111
+#t = 37103
+max_energy = 897.077
+avg_energy = 4.72282
+edge swapping...
+fixed 0 tangled element
+success3 = 214
+success4 = 1642
+success5 = 180
+success = 2036(27101)
+edge swapping done!
+time = 0.429653s
+#v = 7111
+#t = 37069
+max_energy = 897.077
+avg_energy = 4.61169
+vertex smoothing...
+success = 4446(6091)
+vertex smoothing done!
+time = 0.420104s
+#v = 7111
+#t = 37069
+max_energy = 897.077
+avg_energy = 4.42994
+//////////////// pass 4 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 2806(2806)
+edge splitting done!
+time = 0.0489697s
+#v = 9917
+#t = 49619
+max_energy = 897.077
+avg_energy = 4.37888
+edge collapsing...
+fixed 0 tangled element
+success(env) = 133
+success = 2600(42195)
+success(env) = 6
+success = 116(16009)
+success(env) = 1
+success = 9(1734)
+success(env) = 0
+success = 1(222)
+success(env) = 0
+success = 0(19)
+edge collapsing done!
+time = 0.518497s
+#v = 7191
+#t = 37491
+max_energy = 897.077
+avg_energy = 4.42793
+edge swapping...
+fixed 0 tangled element
+success3 = 120
+success4 = 945
+success5 = 91
+success = 1156(26170)
+edge swapping done!
+time = 0.235052s
+#v = 7191
+#t = 37462
+max_energy = 897.077
+avg_energy = 4.39534
+vertex smoothing...
+success = 4331(6102)
+vertex smoothing done!
+time = 0.202071s
+#v = 7191
+#t = 37462
+max_energy = 897.077
+avg_energy = 4.30793
+updating sclaing field ...
+filter_energy = 8.97077
+is_hit_min_edge_length = 0
+//////////////// pass 5 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 7246(7246)
+edge splitting done!
+time = 0.056468s
+#v = 14437
+#t = 74158
+max_energy = 897.077
+avg_energy = 4.48745
+edge collapsing...
+fixed 0 tangled element
+success(env) = 505
+success = 4725(58539)
+success(env) = 45
+success = 308(29004)
+success(env) = 6
+success = 40(5872)
+success(env) = 0
+success = 7(748)
+success(env) = 0
+success = 0(195)
+edge collapsing done!
+time = 0.790346s
+#v = 9357
+#t = 50062
+max_energy = 35.9868
+avg_energy = 4.19483
+edge swapping...
+fixed 0 tangled element
+success3 = 304
+success4 = 1981
+success5 = 168
+success = 2453(38312)
+edge swapping done!
+time = 0.497035s
+#v = 9357
+#t = 49926
+max_energy = 35.9868
+avg_energy = 4.10128
+vertex smoothing...
+success = 6447(8263)
+vertex smoothing done!
+time = 0.246046s
+#v = 9357
+#t = 49926
+max_energy = 28.1695
+avg_energy = 3.94275
+//////////////// pass 6 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 2738(2738)
+edge splitting done!
+time = 0.040223s
+#v = 12095
+#t = 61839
+max_energy = 28.1695
+avg_energy = 4.02441
+edge collapsing...
+fixed 0 tangled element
+success(env) = 282
+success = 2717(48775)
+success(env) = 6
+success = 72(19725)
+success(env) = 1
+success = 13(1464)
+success(env) = 0
+success = 3(204)
+success(env) = 0
+success = 0(78)
+edge collapsing done!
+time = 0.528789s
+#v = 9290
+#t = 49593
+max_energy = 28.1695
+avg_energy = 3.96017
+edge swapping...
+fixed 0 tangled element
+success3 = 109
+success4 = 1022
+success5 = 80
+success = 1211(35758)
+edge swapping done!
+time = 0.300754s
+#v = 9290
+#t = 49564
+max_energy = 28.1695
+avg_energy = 3.93923
+vertex smoothing...
+success = 6196(8162)
+vertex smoothing done!
+time = 0.219754s
+#v = 9290
+#t = 49564
+max_energy = 28.1695
+avg_energy = 3.87131
+updating sclaing field ...
+filter_energy = 8
+is_hit_min_edge_length = 0
+//////////////// pass 7 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 6690(6690)
+edge splitting done!
+time = 0.0578751s
+#v = 15980
+#t = 82939
+max_energy = 25.8382
+avg_energy = 4.22496
+edge collapsing...
+fixed 0 tangled element
+success(env) = 720
+success = 4537(78285)
+success(env) = 63
+success = 288(29723)
+success(env) = 7
+success = 30(4834)
+success(env) = 0
+success = 10(560)
+success(env) = 0
+success = 1(165)
+success(env) = 0
+success = 0(28)
+edge collapsing done!
+time = 0.802264s
+#v = 11114
+#t = 59889
+max_energy = 25.4844
+avg_energy = 3.95191
+edge swapping...
+fixed 0 tangled element
+success3 = 234
+success4 = 1638
+success5 = 140
+success = 2012(45156)
+edge swapping done!
+time = 0.525501s
+#v = 11114
+#t = 59795
+max_energy = 25.4844
+avg_energy = 3.90734
+vertex smoothing...
+success = 7785(9969)
+vertex smoothing done!
+time = 0.242706s
+#v = 11114
+#t = 59795
+max_energy = 21.1325
+avg_energy = 3.79569
+//////////////// pass 8 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 3076(3076)
+edge splitting done!
+time = 0.047767s
+#v = 14190
+#t = 73430
+max_energy = 21.1325
+avg_energy = 3.93367
+edge collapsing...
+fixed 0 tangled element
+success(env) = 490
+success = 2963(71102)
+success(env) = 26
+success = 109(22336)
+success(env) = 6
+success = 17(1864)
+success(env) = 1
+success = 8(230)
+success(env) = 1
+success = 1(78)
+success(env) = 0
+success = 0(7)
+edge collapsing done!
+time = 0.620599s
+#v = 11092
+#t = 59828
+max_energy = 21.1325
+avg_energy = 3.81025
+edge swapping...
+fixed 0 tangled element
+success3 = 75
+success4 = 966
+success5 = 65
+success = 1106(43204)
+edge swapping done!
+time = 0.356153s
+#v = 11092
+#t = 59818
+max_energy = 21.1325
+avg_energy = 3.79708
+vertex smoothing...
+success = 7660(9948)
+vertex smoothing done!
+time = 0.37657s
+#v = 11092
+#t = 59818
+max_energy = 20.5803
+avg_energy = 3.74543
+//////////////// pass 9 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 2473(2473)
+edge splitting done!
+time = 0.0425554s
+#v = 13565
+#t = 70335
+max_energy = 20.5803
+avg_energy = 3.85718
+edge collapsing...
+fixed 0 tangled element
+success(env) = 376
+success = 2416(68803)
+success(env) = 13
+success = 65(18460)
+success(env) = 1
+success = 3(947)
+success(env) = 0
+success = 0(70)
+edge collapsing done!
+time = 0.739216s
+#v = 11081
+#t = 59786
+max_energy = 20.5803
+avg_energy = 3.76054
+edge swapping...
+fixed 0 tangled element
+success3 = 34
+success4 = 595
+success5 = 31
+success = 660(42289)
+edge swapping done!
+time = 0.320144s
+#v = 11081
+#t = 59783
+max_energy = 20.5803
+avg_energy = 3.75393
+vertex smoothing...
+success = 7511(9927)
+vertex smoothing done!
+time = 0.36851s
+#v = 11081
+#t = 59783
+max_energy = 19.503
+avg_energy = 3.72541
+//////////////// pass 10 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 2282(2282)
+edge splitting done!
+time = 0.0470418s
+#v = 13363
+#t = 69346
+max_energy = 19.503
+avg_energy = 3.83065
+edge collapsing...
+fixed 0 tangled element
+success(env) = 332
+success = 2205(67951)
+success(env) = 6
+success = 49(17016)
+success(env) = 0
+success = 2(758)
+success(env) = 0
+success = 0(34)
+edge collapsing done!
+time = 0.482432s
+#v = 11107
+#t = 59945
+max_energy = 19.503
+avg_energy = 3.73783
+edge swapping...
+fixed 0 tangled element
+success3 = 31
+success4 = 446
+success5 = 14
+success = 491(42190)
+edge swapping done!
+time = 0.331054s
+#v = 11107
+#t = 59928
+max_energy = 19.503
+avg_energy = 3.73221
+vertex smoothing...
+success = 7341(9940)
+vertex smoothing done!
+time = 0.22572s
+#v = 11107
+#t = 59928
+max_energy = 19.0848
+avg_energy = 3.71266
+updating sclaing field ...
+filter_energy = 8
+is_hit_min_edge_length = 0
+//////////////// pass 11 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 1605(1605)
+edge splitting done!
+time = 0.0411381s
+#v = 12712
+#t = 66509
+max_energy = 26.1388
+avg_energy = 3.80755
+edge collapsing...
+fixed 0 tangled element
+success(env) = 158
+success = 1422(106783)
+success(env) = 6
+success = 45(12731)
+success(env) = 0
+success = 4(844)
+success(env) = 0
+success = 1(61)
+success(env) = 0
+success = 0(10)
+edge collapsing done!
+time = 0.616855s
+#v = 11240
+#t = 60741
+max_energy = 20.5511
+avg_energy = 3.73625
+edge swapping...
+fixed 0 tangled element
+success3 = 34
+success4 = 362
+success5 = 12
+success = 408(42755)
+edge swapping done!
+time = 0.371179s
+#v = 11240
+#t = 60719
+max_energy = 20.5511
+avg_energy = 3.72975
+vertex smoothing...
+success = 7417(10068)
+vertex smoothing done!
+time = 0.213992s
+#v = 11240
+#t = 60719
+max_energy = 19.0848
+avg_energy = 3.70705
+//////////////// pass 12 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 1257(1257)
+edge splitting done!
+time = 0.0389974s
+#v = 12497
+#t = 65336
+max_energy = 19.0848
+avg_energy = 3.75782
+edge collapsing...
+fixed 0 tangled element
+success(env) = 101
+success = 1227(105746)
+success(env) = 2
+success = 23(8141)
+success(env) = 0
+success = 3(459)
+success(env) = 0
+success = 1(58)
+success(env) = 0
+success = 1(50)
+success(env) = 0
+success = 0(29)
+edge collapsing done!
+time = 1.15116s
+#v = 11242
+#t = 60714
+max_energy = 19.0848
+avg_energy = 3.71514
+edge swapping...
+fixed 0 tangled element
+success3 = 21
+success4 = 202
+success5 = 9
+success = 232(42345)
+edge swapping done!
+time = 0.832813s
+#v = 11242
+#t = 60702
+max_energy = 19.0848
+avg_energy = 3.71238
+vertex smoothing...
+success = 7266(10075)
+vertex smoothing done!
+time = 0.354352s
+#v = 11242
+#t = 60702
+max_energy = 18.8187
+avg_energy = 3.69994
+updating sclaing field ...
+filter_energy = 8
+is_hit_min_edge_length = 0
+//////////////// pass 13 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 994(994)
+edge splitting done!
+time = 0.0589983s
+#v = 12236
+#t = 64068
+max_energy = 19.2867
+avg_energy = 3.74166
+edge collapsing...
+fixed 0 tangled element
+success(env) = 43
+success = 989(116423)
+success(env) = 3
+success = 21(6253)
+success(env) = 1
+success = 1(343)
+success(env) = 0
+success = 0(49)
+edge collapsing done!
+time = 0.746004s
+#v = 11225
+#t = 60646
+max_energy = 18.8187
+avg_energy = 3.70689
+edge swapping...
+fixed 0 tangled element
+success3 = 6
+success4 = 130
+success5 = 5
+success = 141(42124)
+edge swapping done!
+time = 0.331685s
+#v = 11225
+#t = 60645
+max_energy = 18.8187
+avg_energy = 3.7052
+vertex smoothing...
+success = 7152(10059)
+vertex smoothing done!
+time = 0.188025s
+#v = 11225
+#t = 60645
+max_energy = 17.9236
+avg_energy = 3.6974
+//////////////// pass 14 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 946(946)
+edge splitting done!
+time = 0.040489s
+#v = 12171
+#t = 63735
+max_energy = 17.9236
+avg_energy = 3.72175
+edge collapsing...
+fixed 0 tangled element
+success(env) = 19
+success = 935(116107)
+success(env) = 0
+success = 12(4930)
+success(env) = 0
+success = 1(104)
+success(env) = 0
+success = 0(0)
+edge collapsing done!
+time = 0.555793s
+#v = 11223
+#t = 60625
+max_energy = 17.9236
+avg_energy = 3.70038
+edge swapping...
+fixed 0 tangled element
+success3 = 5
+success4 = 81
+success5 = 4
+success = 90(42006)
+edge swapping done!
+time = 0.306654s
+#v = 11223
+#t = 60624
+max_energy = 17.9236
+avg_energy = 3.69968
+vertex smoothing...
+success = 7117(10049)
+vertex smoothing done!
+time = 0.180313s
+#v = 11223
+#t = 60624
+max_energy = 17.1829
+avg_energy = 3.69511
+//////////////// pass 15 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 920(920)
+edge splitting done!
+time = 0.0373458s
+#v = 12143
+#t = 63569
+max_energy = 17.1829
+avg_energy = 3.71672
+edge collapsing...
+fixed 0 tangled element
+success(env) = 13
+success = 911(115939)
+success(env) = 1
+success = 15(4401)
+success(env) = 0
+success = 0(130)
+edge collapsing done!
+time = 0.532227s
+#v = 11217
+#t = 60594
+max_energy = 17.1829
+avg_energy = 3.69723
+edge swapping...
+fixed 0 tangled element
+success3 = 4
+success4 = 72
+success5 = 2
+success = 78(41996)
+edge swapping done!
+time = 0.30304s
+#v = 11217
+#t = 60592
+max_energy = 17.1829
+avg_energy = 3.69695
+vertex smoothing...
+success = 7026(10031)
+vertex smoothing done!
+time = 0.171043s
+#v = 11217
+#t = 60592
+max_energy = 16.8856
+avg_energy = 3.69412
+updating sclaing field ...
+filter_energy = 8
+is_hit_min_edge_length = 1
+//////////////// pass 16 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 915(915)
+edge splitting done!
+time = 0.0379036s
+#v = 12132
+#t = 63546
+max_energy = 20.3566
+avg_energy = 3.72148
+edge collapsing...
+fixed 0 tangled element
+success(env) = 23
+success = 894(117244)
+success(env) = 2
+success = 14(3726)
+success(env) = 1
+success = 2(172)
+success(env) = 0
+success = 0(113)
+edge collapsing done!
+time = 0.537762s
+#v = 11222
+#t = 60619
+max_energy = 17.6656
+avg_energy = 3.69616
+edge swapping...
+fixed 0 tangled element
+success3 = 3
+success4 = 49
+success5 = 4
+success = 56(41937)
+edge swapping done!
+time = 0.303537s
+#v = 11222
+#t = 60620
+max_energy = 17.6656
+avg_energy = 3.69554
+vertex smoothing...
+success = 6953(10030)
+vertex smoothing done!
+time = 0.161548s
+#v = 11222
+#t = 60620
+max_energy = 15.7126
+avg_energy = 3.6928
+//////////////// pass 17 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 898(898)
+edge splitting done!
+time = 0.0374189s
+#v = 12120
+#t = 63478
+max_energy = 15.7126
+avg_energy = 3.71439
+edge collapsing...
+fixed 0 tangled element
+success(env) = 20
+success = 885(117196)
+success(env) = 1
+success = 11(3909)
+success(env) = 0
+success = 5(177)
+success(env) = 0
+success = 0(126)
+edge collapsing done!
+time = 0.549404s
+#v = 11219
+#t = 60601
+max_energy = 15.7126
+avg_energy = 3.6947
+edge swapping...
+fixed 0 tangled element
+success3 = 1
+success4 = 38
+success5 = 1
+success = 40(41905)
+edge swapping done!
+time = 0.29984s
+#v = 11219
+#t = 60601
+max_energy = 15.7126
+avg_energy = 3.69439
+vertex smoothing...
+success = 6912(10014)
+vertex smoothing done!
+time = 0.146535s
+#v = 11219
+#t = 60601
+max_energy = 15.7126
+avg_energy = 3.69264
+updating sclaing field ...
+filter_energy = 8
+is_hit_min_edge_length = 1
+//////////////// pass 18 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 967(967)
+edge splitting done!
+time = 0.0377723s
+#v = 12186
+#t = 63810
+max_energy = 15.7126
+avg_energy = 3.72396
+edge collapsing...
+fixed 0 tangled element
+success(env) = 28
+success = 928(117179)
+success(env) = 1
+success = 12(3699)
+success(env) = 0
+success = 0(103)
+edge collapsing done!
+time = 0.547864s
+#v = 11246
+#t = 60749
+max_energy = 15.7126
+avg_energy = 3.697
+edge swapping...
+fixed 0 tangled element
+success3 = 2
+success4 = 54
+success5 = 2
+success = 58(42046)
+edge swapping done!
+time = 0.315756s
+#v = 11246
+#t = 60749
+max_energy = 15.7126
+avg_energy = 3.69591
+vertex smoothing...
+success = 6894(10041)
+vertex smoothing done!
+time = 0.155306s
+#v = 11246
+#t = 60749
+max_energy = 15.5143
+avg_energy = 3.69312
+//////////////// pass 19 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 916(916)
+edge splitting done!
+time = 0.0405274s
+#v = 12162
+#t = 63690
+max_energy = 15.5143
+avg_energy = 3.71899
+edge collapsing...
+fixed 0 tangled element
+success(env) = 20
+success = 893(117163)
+success(env) = 2
+success = 21(3380)
+success(env) = 0
+success = 0(144)
+edge collapsing done!
+time = 0.582363s
+#v = 11248
+#t = 60753
+max_energy = 15.5143
+avg_energy = 3.69491
+edge swapping...
+fixed 0 tangled element
+success3 = 3
+success4 = 43
+success5 = 0
+success = 46(42016)
+edge swapping done!
+time = 0.294735s
+#v = 11248
+#t = 60750
+max_energy = 15.5143
+avg_energy = 3.69421
+vertex smoothing...
+success = 6874(10045)
+vertex smoothing done!
+time = 0.140479s
+#v = 11248
+#t = 60750
+max_energy = 15.5143
+avg_energy = 3.6924
+updating sclaing field ...
+filter_energy = 8
+is_hit_min_edge_length = 1
+//////////////// pass 20 ////////////////
+edge splitting...
+fixed 0 tangled element
+success = 957(957)
+edge splitting done!
+time = 0.0380693s
+#v = 12205
+#t = 63914
+max_energy = 15.5143
+avg_energy = 3.7218
+edge collapsing...
+fixed 0 tangled element
+success(env) = 17
+success = 933(117387)
+success(env) = 2
+success = 17(3463)
+success(env) = 5
+success = 6(186)
+success(env) = 1
+success = 1(116)
+success(env) = 0
+success = 0(9)
+edge collapsing done!
+time = 0.543162s
+#v = 11248
+#t = 60763
+max_energy = 8.803
+avg_energy = 3.69331
+edge swapping...
+fixed 0 tangled element
+success3 = 3
+success4 = 49
+success5 = 1
+success = 53(42066)
+edge swapping done!
+time = 0.29979s
+#v = 11248
+#t = 60761
+max_energy = 8.6512
+avg_energy = 3.69245
+vertex smoothing...
+success = 6859(10054)
+vertex smoothing done!
+time = 0.139577s
+#v = 11248
+#t = 60761
+max_energy = 8.52876
+avg_energy = 3.69004
+//////////////// postprocessing ////////////////
+edge collapsing...
+fixed 0 tangled element
+success(env) = 11
+success = 27(115207)
+success(env) = 0
+success = 2(814)
+success(env) = 0
+success = 0(113)
+edge collapsing done!
+time = 0.499131s
+#v = 11219
+#t = 60616
+max_energy = 8.37588
+avg_energy = 3.68963
+
+=== STDERR ===
